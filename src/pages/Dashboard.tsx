@@ -1,857 +1,381 @@
-import React, { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { fetchResidents, fetchExpenses, fetchAllPayments, fetchPaymentsByMonth } from '../services/dataService';
-import { useAuth } from '../contexts/AuthContext';
-import { Users, Wallet, BarChart3, DollarSign, Calendar, CreditCard, Filter, PiggyBank, Gift, Home, RefreshCw } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, CartesianGrid } from 'recharts';
+import React, { useMemo, useState } from 'react';
+import { 
+  LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  BarChart, Bar, Cell, Legend
+} from 'recharts';
+import { 
+  TrendingUp, TrendingDown, Wallet, Users, AlertCircle, 
+  Calendar, ArrowUpRight, ArrowDownRight, Info, ChevronRight,
+  Calculator, LucideIcon
+} from 'lucide-react';
+import { Resident, Expense, Payment } from '../types';
 
-const getMonthName = (monthNumber: number): string => {
-  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  return months[monthNumber - 1] || 'Tidak Valid';
-};
+// --- INTERNAL COMPONENTS (Inlined to fix resolution errors) ---
 
-const formatCurrency = (amount: number) => {
-  return `Rp ${amount.toLocaleString('id-ID')}`;
-};
+interface SummaryCardProps {
+  title: string;
+  value: string;
+  icon: LucideIcon;
+  trend?: {
+    value: string;
+    isPositive: boolean;
+  };
+  color: 'blue' | 'green' | 'red' | 'indigo' | 'orange' | 'purple';
+  subtitle?: string;
+}
 
-export const Dashboard = () => {
-  const { user } = useAuth();
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [activeTab, setActiveTab] = useState<'overview' | 'kas-bulanan' | 'kas-acara'>('overview');
-
-  const { data: residents = [], isLoading: loadingResidents } = useQuery({ 
-    queryKey: ['residents'], queryFn: fetchResidents, retry: 2
-  });
-  
-  const { data: allExpenses = [], isLoading: loadingExpenses } = useQuery({ 
-    queryKey: ['expenses'], queryFn: fetchExpenses, retry: 2
-  });
-  
-  const { data: allPayments = [], isLoading: loadingAllPayments } = useQuery({ 
-    queryKey: ['allPayments'], queryFn: fetchAllPayments, retry: 2
-  });
-
-  const { data: monthlyPayments = [], isLoading: loadingMonthlyPayments } = useQuery({ 
-    queryKey: ['payments', selectedMonth, selectedYear], 
-    queryFn: () => fetchPaymentsByMonth(selectedMonth, selectedYear),
-    retry: 2
-  });
-
-  const isLoading = loadingResidents || loadingExpenses || loadingAllPayments || loadingMonthlyPayments;
-
-  const filteredData = useMemo(() => {
-    const filteredExpenses = allExpenses?.filter(expense => {
-      if (!expense.date) return false;
-      const expenseDate = new Date(expense.date);
-      return expenseDate.getMonth() + 1 === selectedMonth && expenseDate.getFullYear() === selectedYear;
-    }) || [];
-
-    const paymentsForSelectedMonth = monthlyPayments || [];
-    const paidIds = new Set(paymentsForSelectedMonth.map(p => p.resident_id));
-    const residentsWithPaymentStatus = residents?.map(resident => ({
-      ...resident,
-      isPaidSelectedMonth: paidIds.has(resident.id)
-    })) || [];
-
-    const selectedMonthExpenses = filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-    const selectedMonthIncome = paymentsForSelectedMonth.reduce((sum, p) => sum + (p.amount || 10000), 0);
-    const selectedMonthPaidCount = paymentsForSelectedMonth.length;
-    const selectedMonthUnpaidCount = Math.max(0, residents.length - selectedMonthPaidCount);
-    const selectedMonthPaymentRate = residents.length > 0 ? Math.round((selectedMonthPaidCount / residents.length) * 100) : 0;
-
-    const menetap = residents?.filter(r => r.occupancyStatus === 'Menetap').length || 0;
-    const penyewa = residents?.filter(r => r.occupancyStatus === 'Penyewa').length || 0;
-    const kunjungan = residents?.filter(r => r.occupancyStatus === 'Kunjungan').length || 0;
-    const ditempati2026 = residents?.filter(r => r.occupancyStatus === 'Ditempati 2026').length || 0;
-
-    const totalSukarela = residents?.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0) || 0;
-    const totalAcaraExpenses = allExpenses?.filter(e => e.category === 'Acara').reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-
-    const monthlyData = Array.from({ length: 12 }, (_, i) => {
-      const month = i + 1;
-      const monthPayments = allPayments?.filter(p => p.month === month && p.year === selectedYear) || [];
-      const monthExpenses = allExpenses?.filter(e => {
-        const expenseDate = new Date(e.date);
-        return expenseDate.getMonth() + 1 === month && expenseDate.getFullYear() === selectedYear;
-      }) || [];
-      
-      const income = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
-      const expense = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
-      
-      return {
-        month: getMonthName(month).substring(0, 3),
-        income,
-        expense,
-        balance: income - expense
-      };
-    });
-
-    return {
-      allResidents: residents,
-      filteredExpenses,
-      paymentsForSelectedMonth,
-      residentsWithPaymentStatus,
-      selectedMonthExpenses,
-      selectedMonthIncome,
-      selectedMonthPaidCount,
-      selectedMonthUnpaidCount,
-      selectedMonthPaymentRate,
-      menetap,
-      penyewa,
-      kunjungan,
-      ditempati2026,
-      totalSukarela,
-      totalAcaraExpenses,
-      monthlyData,
-      monthName: getMonthName(selectedMonth)
-    };
-  }, [residents, allExpenses, allPayments, monthlyPayments, selectedMonth, selectedYear]);
-
-  const occupancyChartData = useMemo(() => [
-    { name: 'Menetap', value: filteredData.menetap, color: '#10b981' },
-    { name: 'Penyewa', value: filteredData.penyewa, color: '#3b82f6' },
-    { name: 'Kunjungan', value: filteredData.kunjungan, color: '#f59e0b' },
-    { name: '2026', value: filteredData.ditempati2026, color: '#8b5cf6' }
-  ].filter(item => item.value > 0), [filteredData]);
-
-  const paymentChartData = useMemo(() => [
-    { name: 'Sudah Bayar', value: filteredData.selectedMonthPaidCount, color: '#10b981' },
-    { name: 'Belum Bayar', value: filteredData.selectedMonthUnpaidCount, color: '#ef4444' }
-  ], [filteredData]);
-
-  if (isLoading) {
-    return (
-      <div className="p-8 flex flex-col justify-center items-center gap-4 min-h-[400px]">
-        <RefreshCw className="animate-spin text-emerald-600" size={32} />
-        <p className="text-gray-600">Memuat data dashboard...</p>
-      </div>
-    );
-  }
+const SummaryCard: React.FC<SummaryCardProps> = ({ 
+  title, value, icon: Icon, trend, color, subtitle 
+}) => {
+  const colors = {
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    green: 'bg-green-50 text-green-600 border-green-100',
+    red: 'bg-red-50 text-red-600 border-red-100',
+    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-100',
+    orange: 'bg-orange-50 text-orange-600 border-orange-100',
+    purple: 'bg-purple-50 text-purple-600 border-purple-100',
+  };
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h2 className="text-3xl font-black text-gray-800">Dashboard Keuangan</h2>
-          <p className="text-gray-500">Ringkasan {filteredData.monthName} {selectedYear}</p>
+    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow">
+      <div className="flex justify-between items-start mb-4">
+        <div className={`p-3 rounded-xl ${colors[color]} border`}>
+          <Icon className="h-6 w-6" />
         </div>
-        
-        <div className="flex gap-2">
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(Number(e.target.value))}
-            className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(month => (
-              <option key={month} value={month}>{getMonthName(month)}</option>
-            ))}
-          </select>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          >
-            {Array.from({ length: 5 }, (_, i) => 2024 + i).map(year => (
-              <option key={year} value={year}>{year}</option>
-            ))}
-          </select>
-        </div>
+        {trend && (
+          <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+            trend.isPositive ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'
+          }`}>
+            {trend.isPositive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+            {trend.value}
+          </div>
+        )}
       </div>
-
-      {/* TABS */}
-      <div className="bg-white rounded-xl border border-gray-200 p-1">
-        <div className="flex">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'overview' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <BarChart3 size={18} />
-            <span className="font-medium">Overview</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('kas-bulanan')}
-            className={`flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'kas-bulanan' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <PiggyBank size={18} />
-            <span className="font-medium">Kas Bulanan</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('kas-acara')}
-            className={`flex-1 py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 ${
-              activeTab === 'kas-acara' ? 'bg-emerald-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            <Gift size={18} />
-            <span className="font-medium">Kas Acara</span>
-          </button>
-        </div>
-      </div>
-
-      {/* OVERVIEW TAB */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Total Warga */}
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm opacity-90 mb-1">Total Warga</p>
-                  <p className="text-3xl font-black">128 KK</p>
-                </div>
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <Users size={24} />
-                </div>
-              </div>
-              <div className="text-sm opacity-80">
-                <div className="flex justify-between mb-1">
-                  <span>Sudah Bayar:</span>
-                  <span>101 warga</span>
-                </div>
-                <div className="w-full bg-white/20 h-1.5 rounded-full">
-                  <div className="bg-white h-1.5 rounded-full" style={{ width: '79%' }}></div>
-                </div>
-                <p className="mt-1 text-center font-medium">79%</p>
-              </div>
-            </div>
-            
-            {/* Total Saldo */}
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm opacity-90 mb-1">Total Saldo ({selectedYear})</p>
-                  <p className="text-3xl font-black">{formatCurrency(
-                    (filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0) + filteredData.totalSukarela) - 
-                    filteredData.filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0)
-                  )}</p>
-                </div>
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <Wallet size={24} />
-                </div>
-              </div>
-              <div className="text-sm opacity-80 space-y-1">
-                <div className="flex justify-between">
-                  <span>Total Pemasukan:</span>
-                  <span>{formatCurrency(
-                    filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0) + filteredData.totalSukarela
-                  )}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Total Pengeluaran:</span>
-                  <span>{formatCurrency(filteredData.filteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0))}</span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Kas Bulanan */}
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm opacity-90 mb-1">Kas Bulanan</p>
-                  <p className="text-3xl font-black">{formatCurrency(
-                    filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0) - 
-                    filteredData.filteredExpenses
-                      .filter(e => e.category === 'Operasional' || e.category === 'Lainnya')
-                      .reduce((sum, e) => sum + (e.amount || 0), 0)
-                  )}</p>
-                </div>
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <CreditCard size={24} />
-                </div>
-              </div>
-              <div className="text-sm opacity-80 space-y-1">
-                <div className="flex justify-between">
-                  <span>Total Masuk ({selectedYear}):</span>
-                  <span>{formatCurrency(filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Operasional ({selectedYear}):</span>
-                  <span>{formatCurrency(
-                    filteredData.filteredExpenses
-                      .filter(e => e.category === 'Operasional' || e.category === 'Lainnya')
-                      .reduce((sum, e) => sum + (e.amount || 0), 0)
-                  )}</span>
-                </div>
-                <div className="text-center mt-2">
-                  <span className="px-2 py-1 text-xs rounded-full bg-green-400 text-green-900">
-                    Kas sehat
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            {/* Kas Acara */}
-            <div className="bg-gradient-to-br from-pink-500 to-pink-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm opacity-90 mb-1">Kas Acara</p>
-                  <p className="text-3xl font-black">{formatCurrency(filteredData.totalSukarela - filteredData.totalAcaraExpenses)}</p>
-                </div>
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <Gift size={24} />
-                </div>
-              </div>
-              <div className="text-sm opacity-80 space-y-1">
-                <div className="flex justify-between">
-                  <span>Total Masuk:</span>
-                  <span>{formatCurrency(filteredData.totalSukarela)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Pengeluaran Acara:</span>
-                  <span>{formatCurrency(filteredData.totalAcaraExpenses)}</span>
-                </div>
-                <div className="flex justify-between font-medium">
-                  <span>Saldo Tersedia:</span>
-                  <span>{formatCurrency(filteredData.totalSukarela - filteredData.totalAcaraExpenses)}</span>
-                </div>
-                <div className="text-center mt-2">
-                  <span className="px-2 py-1 text-xs rounded-full bg-green-400 text-green-900">
-                    Dana tersedia
-                  </span>
-                </div>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-lg bg-emerald-100 text-emerald-600">
-                  <Home size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800">Status Hunian Warga</h3>
-                  <p className="text-gray-600 text-sm">Distribusi berdasarkan status tempat tinggal</p>
-                </div>
-              </div>
-              
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={occupancyChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {occupancyChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} warga`, 'Jumlah']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                <div className="text-center p-3 bg-emerald-50 rounded-xl">
-                  <p className="text-sm font-medium text-emerald-700 mb-1">Menetap</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.menetap}</p>
-                  <p className="text-xs text-emerald-600">
-                    {filteredData.allResidents.length > 0 ? Math.round((filteredData.menetap / filteredData.allResidents.length) * 100) : 0}%
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-blue-50 rounded-xl">
-                  <p className="text-sm font-medium text-blue-700 mb-1">Penyewa</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.penyewa}</p>
-                  <p className="text-xs text-blue-600">
-                    {filteredData.allResidents.length > 0 ? Math.round((filteredData.penyewa / filteredData.allResidents.length) * 100) : 0}%
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-amber-50 rounded-xl">
-                  <p className="text-sm font-medium text-amber-700 mb-1">Kunjungan</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.kunjungan}</p>
-                  <p className="text-xs text-amber-600">
-                    {filteredData.allResidents.length > 0 ? Math.round((filteredData.kunjungan / filteredData.allResidents.length) * 100) : 0}%
-                  </p>
-                </div>
-                <div className="text-center p-3 bg-purple-50 rounded-xl">
-                  <p className="text-sm font-medium text-purple-700 mb-1">2026</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.ditempati2026}</p>
-                  <p className="text-xs text-purple-600">
-                    {filteredData.allResidents.length > 0 ? Math.round((filteredData.ditempati2026 / filteredData.allResidents.length) * 100) : 0}%
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-2 rounded-lg bg-blue-100 text-blue-600">
-                  <CreditCard size={20} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-800">Status Pembayaran {filteredData.monthName}</h3>
-                  <p className="text-gray-600 text-sm">Warga yang sudah dan belum bayar iuran</p>
-                </div>
-              </div>
-              
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={paymentChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {paymentChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} warga`, 'Jumlah']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <div className="text-center p-3 bg-emerald-50 rounded-xl">
-                  <p className="text-sm font-medium text-emerald-700 mb-1">Sudah Bayar</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.selectedMonthPaidCount}</p>
-                  <p className="text-xs text-emerald-600">{filteredData.selectedMonthPaymentRate}%</p>
-                </div>
-                <div className="text-center p-3 bg-red-50 rounded-xl">
-                  <p className="text-sm font-medium text-red-700 mb-1">Belum Bayar</p>
-                  <p className="text-lg font-bold text-gray-800">{filteredData.selectedMonthUnpaidCount}</p>
-                  <p className="text-xs text-red-600">{100 - filteredData.selectedMonthPaymentRate}%</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KAS BULANAN TAB */}
-      {activeTab === 'kas-bulanan' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <PiggyBank size={24} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black">Kas Bulanan (Wajib)</h3>
-                  <p className="opacity-90">Iuran Rp 10.000/KK per bulan</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="bg-white/10 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="opacity-90">Masuk ({filteredData.monthName})</span>
-                    <span className="text-lg font-bold">{formatCurrency(filteredData.selectedMonthIncome)}</span>
-                  </div>
-                  <p className="text-sm opacity-80">
-                    {filteredData.selectedMonthPaidCount} dari {filteredData.allResidents.length} warga
-                  </p>
-                </div>
-                
-                <div className="bg-white/10 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="opacity-90">Pengeluaran Operasional</span>
-                    <span className="text-lg font-bold">{formatCurrency(
-                      filteredData.filteredExpenses.filter(e => e.category === 'Operasional' || e.category === 'Lainnya')
-                        .reduce((sum, e) => sum + (e.amount || 0), 0)
-                    )}</span>
-                  </div>
-                  <p className="text-sm opacity-80">
-                    {filteredData.filteredExpenses.filter(e => e.category === 'Operasional' || e.category === 'Lainnya').length} transaksi
-                  </p>
-                </div>
-                
-                <div className="bg-white/10 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="opacity-90">Total Masuk ({selectedYear})</span>
-                    <span className="text-lg font-bold">{formatCurrency(filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0))}</span>
-                  </div>
-                  <p className="text-sm opacity-80">Dari seluruh pembayaran iuran wajib</p>
-                </div>
-                
-                <div className="bg-white/20 p-4 rounded-xl border-2 border-white/30">
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold">Saldo Kas Bulanan</span>
-                    <span className="text-2xl font-black">{formatCurrency(
-                      filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0) - 
-                      filteredData.filteredExpenses
-                        .filter(e => e.category === 'Operasional' || e.category === 'Lainnya')
-                        .reduce((sum, e) => sum + (e.amount || 0), 0)
-                    )}</span>
-                  </div>
-                  <div className="mt-2">
-                    <span className="px-3 py-1 text-sm rounded-full bg-green-400 text-green-900">
-                      Kas sehat
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-                <CreditCard size={20} />
-                Statistik Pembayaran {selectedYear}
-              </h3>
-              
-              <div className="space-y-4">
-                <div className="bg-gray-50 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium text-gray-700">Rasio Pembayaran</span>
-                    <span className="text-lg font-bold text-purple-600">{filteredData.selectedMonthPaymentRate}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 h-3 rounded-full">
-                    <div className="bg-purple-600 h-3 rounded-full transition-all duration-500" style={{ width: `${filteredData.selectedMonthPaymentRate}%` }}></div>
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>{filteredData.selectedMonthPaidCount} dari {filteredData.allResidents.length} warga sudah bayar</span>
-                    <span>{filteredData.selectedMonthPaymentRate}%</span>
-                  </div>
-                </div>
-
-                <div className="text-sm text-gray-600">
-                  <p>Info: Dana kas bulanan dialokasikan untuk menunjang biaya operasional paguyuban, yang meliputi pengadaan Alat Tulis Kantor (ATK), biaya administrasi, serta dana sosial untuk memberikan santunan atau bantuan kepada warga yang membutuhkan.</p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-              <BarChart3 size={20} />
-              Pengeluaran Operasional {selectedYear}
-            </h3>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left py-3 px-4 font-medium text-gray-700">Bulan</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Pemasukan</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Pengeluaran</th>
-                    <th className="text-right py-3 px-4 font-medium text-gray-700">Saldo</th>
-                    <th className="text-center py-3 px-4 font-medium text-gray-700">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredData.monthlyData.map((data, index) => {
-                    const monthIndex = index + 1;
-                    const isActive = monthIndex === selectedMonth;
-                    const operationalExpenses = allExpenses?.filter(e => {
-                      const expenseDate = new Date(e.date);
-                      return expenseDate.getMonth() + 1 === monthIndex && 
-                             expenseDate.getFullYear() === selectedYear &&
-                             (e.category === 'Operasional' || e.category === 'Lainnya');
-                    }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-                    
-                    const balance = data.income - operationalExpenses;
-                    const status = balance > 0 ? 'Sehat' : balance === 0 ? 'Aman' : 'Perlu Perhatian';
-                    const statusColor = balance > 0 ? 'green' : balance === 0 ? 'blue' : 'yellow';
-                    
-                    return (
-                      <tr key={index} className="border-b border-gray-100">
-                        <td className="py-3 px-4 font-medium">{data.month}</td>
-                        <td className="py-3 px-4 text-right">
-                          {isActive && (
-                            <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">Aktif</span>
-                          )}
-                          <div className={isActive ? "mt-1" : ""}>
-                            {formatCurrency(data.income)}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4 text-right">{formatCurrency(operationalExpenses)}</td>
-                        <td className="py-3 px-4 text-right font-medium">{formatCurrency(balance)}</td>
-                        <td className="py-3 px-4 text-center">
-                          <span className={`px-2 py-1 text-xs rounded-full bg-${statusColor}-100 text-${statusColor}-800`}>
-                            {status}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  <tr className="bg-gray-50 font-bold">
-                    <td className="py-3 px-4">Total</td>
-                    <td className="py-3 px-4 text-right">
-                      {formatCurrency(filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0))}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {formatCurrency(
-                        allExpenses?.filter(e => {
-                          const expenseDate = new Date(e.date);
-                          return expenseDate.getFullYear() === selectedYear &&
-                                 (e.category === 'Operasional' || e.category === 'Lainnya');
-                        }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {formatCurrency(
-                        filteredData.monthlyData.reduce((sum, d) => sum + d.income, 0) -
-                        allExpenses?.filter(e => {
-                          const expenseDate = new Date(e.date);
-                          return expenseDate.getFullYear() === selectedYear &&
-                                 (e.category === 'Operasional' || e.category === 'Lainnya');
-                        }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 font-medium">
-                        Kas Sehat
-                      </span>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <div className="text-sm text-gray-600 mt-4">
-              <p>Dashboard Keuangan Paguyuban Cluster Beryl • Update terakhir: {new Date().toLocaleDateString('id-ID')}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* KAS ACARA TAB */}
-      {activeTab === 'kas-acara' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="bg-gradient-to-br from-pink-500 to-pink-600 text-white p-6 rounded-2xl shadow-lg">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-white/20 rounded-xl">
-                  <Gift size={24} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black">Kas Acara (Sukarela)</h3>
-                  <p className="opacity-90">Iuran sukarela untuk kegiatan</p>
-                </div>
-              </div>
-              
-              <div className="space-y-4">
-                <div className="bg-white/10 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="opacity-90">Total Masuk</span>
-                    <span className="text-lg font-bold">{formatCurrency(filteredData.totalSukarela)}</span>
-                  </div>
-                  <p className="text-sm opacity-80">Dari iuran sukarela semua warga</p>
-                </div>
-                
-                <div className="bg-white/10 p-4 rounded-xl">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="opacity-90">Pengeluaran Acara</span>
-                    <span className="text-lg font-bold">{formatCurrency(filteredData.totalAcaraExpenses)}</span>
-                  </div>
-                  <p className="text-sm opacity-80">
-                    {allExpenses?.filter(e => e.category === 'Acara').length || 0} transaksi acara
-                  </p>
-                </div>
-                
-                <div className="bg-white/20 p-4 rounded-xl border-2 border-white/30">
-                  <div className="flex justify-between items-center">
-                    <span className="text-lg font-bold">Saldo Kas Acara</span>
-                    <span className="text-2xl font-black">{formatCurrency(filteredData.totalSukarela - filteredData.totalAcaraExpenses)}</span>
-                  </div>
-                  <div className="mt-2">
-                    <span className="px-3 py-1 text-sm rounded-full bg-green-400 text-green-900">
-                      Dana tersedia
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Donatur Terbaik */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-              <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-                <Gift size={20} />
-                Donatur Terbaik {selectedYear}
-              </h3>
-              
-              <div className="space-y-4">
-                <div className="overflow-y-auto max-h-64">
-                  {filteredData.allResidents
-                    .filter(r => (r.eventDuesAmount || 0) > 0)
-                    .sort((a, b) => (b.eventDuesAmount || 0) - (a.eventDuesAmount || 0))
-                    .slice(0, 10)
-                    .map((resident, index) => (
-                      <div key={resident.id} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                            index === 0 ? 'bg-yellow-100 text-yellow-800' :
-                            index === 1 ? 'bg-gray-100 text-gray-800' :
-                            index === 2 ? 'bg-orange-100 text-orange-800' :
-                            'bg-blue-100 text-blue-800'
-                          }`}>
-                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : (index + 1)}
-                          </div>
-                          <div>
-                            <p className="font-medium">{resident.fullName}</p>
-                            <p className="text-xs text-gray-500">Blok {resident.blockNumber}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-pink-600">
-                            {formatCurrency(resident.eventDuesAmount || 0)}
-                          </p>
-                          <p className="text-xs text-gray-500">donasi</p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-                
-                <div className="bg-pink-50 p-4 rounded-xl">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-pink-700 font-bold mb-1">Total Donatur</p>
-                      <p className="text-xl font-black text-pink-700">
-                        {filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length} warga
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-pink-700 font-bold mb-1">Rata-rata Donasi</p>
-                      <p className="text-xl font-black text-pink-700">
-                        {filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length > 0
-                          ? formatCurrency(Math.round(
-                              filteredData.totalSukarela / 
-                              filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length
-                            ))
-                          : 'Rp 0'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Detail Transaksi Acara */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-              <Calendar size={20} />
-              Detail Transaksi Acara {selectedYear}
-            </h3>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Pengeluaran Acara */}
-              <div>
-                <h4 className="font-medium text-gray-700 mb-3">Pengeluaran Acara</h4>
-                <div className="space-y-3 max-h-60 overflow-y-auto">
-                  {allExpenses
-                    ?.filter(e => e.category === 'Acara')
-                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                    .map(expense => (
-                      <div key={expense.id} className="p-3 border border-pink-200 rounded-lg bg-pink-50">
-                        <div className="flex justify-between items-start mb-1">
-                          <p className="font-medium">{expense.description}</p>
-                          <p className="font-bold text-pink-600">{formatCurrency(expense.amount)}</p>
-                        </div>
-                        <div className="flex justify-between text-sm text-gray-500">
-                          <span>{expense.date}</span>
-                          <span className="bg-pink-100 text-pink-800 px-2 py-0.5 rounded-full text-xs">
-                            Acara
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  {allExpenses?.filter(e => e.category === 'Acara').length === 0 && (
-                    <p className="text-gray-500 text-center py-4">Belum ada pengeluaran acara</p>
-                  )}
-                </div>
-              </div>
-              
-              {/* Ringkasan */}
-              <div className="bg-pink-50 p-4 rounded-xl">
-                <h4 className="font-bold text-pink-800 mb-3">Ringkasan Kas Acara</h4>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-700">Total Donasi:</span>
-                    <span className="font-bold text-pink-800">{formatCurrency(filteredData.totalSukarela)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-pink-700">Total Pengeluaran:</span>
-                    <span className="font-bold text-pink-800">{formatCurrency(filteredData.totalAcaraExpenses)}</span>
-                  </div>
-                  <div className="border-t border-pink-200 pt-3">
-                    <div className="flex justify-between items-center">
-                      <span className="text-lg font-bold text-pink-800">Saldo Tersedia:</span>
-                      <span className="text-xl font-black text-pink-900">
-                        {formatCurrency(filteredData.totalSukarela - filteredData.totalAcaraExpenses)}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <p className="text-sm text-pink-700">
-                      💰 <strong>Sisa dana acara</strong> dapat digunakan untuk kegiatan sosial, acara komunitas, atau bantuan darurat.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Statistik Partisipasi */}
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-700 mb-4 flex items-center gap-2">
-              <BarChart3 size={20} />
-              Statistik Partisipasi Sukarela
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center p-4 bg-purple-50 rounded-xl">
-                <p className="text-sm font-medium text-purple-700 mb-1">Partisipasi</p>
-                <p className="text-2xl font-bold text-purple-700">
-                  {filteredData.allResidents.length > 0 
-                    ? Math.round((filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length / filteredData.allResidents.length) * 100)
-                    : 0}%
-                </p>
-                <p className="text-xs text-purple-600">
-                  {filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length} dari {filteredData.allResidents.length} warga
-                </p>
-              </div>
-              
-              <div className="text-center p-4 bg-emerald-50 rounded-xl">
-                <p className="text-sm font-medium text-emerald-700 mb-1">Total Terkumpul</p>
-                <p className="text-2xl font-bold text-emerald-700">
-                  {formatCurrency(filteredData.totalSukarela)}
-                </p>
-                <p className="text-xs text-emerald-600">Dari semua donasi</p>
-              </div>
-              
-              <div className="text-center p-4 bg-blue-50 rounded-xl">
-                <p className="text-sm font-medium text-blue-700 mb-1">Rata-rata Donasi</p>
-                <p className="text-2xl font-bold text-blue-700">
-                  {filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length > 0
-                    ? formatCurrency(Math.round(filteredData.totalSukarela / filteredData.allResidents.filter(r => (r.eventDuesAmount || 0) > 0).length))
-                    : 'Rp 0'}
-                </p>
-                <p className="text-xs text-blue-600">Per donatur aktif</p>
-              </div>
-            </div>
-            
-            <div className="mt-4 text-sm text-gray-600">
-              <p>💡 <strong>Tips:</strong> Apresiasi donatur terbesar dapat meningkatkan partisipasi warga lainnya. Buat laporan transparan untuk menjaga kepercayaan warga.</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FOOTER */}
-      <div className="text-center text-gray-400 text-sm py-4">
-        <p>Dashboard Keuangan Paguyuban Cluster Beryl • Update terakhir: {new Date().toLocaleDateString('id-ID')}</p>
+      <div>
+        <h3 className="text-sm font-medium text-slate-500 mb-1">{title}</h3>
+        <div className="text-2xl font-bold text-slate-800 tracking-tight">{value}</div>
+        {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
       </div>
     </div>
   );
 };
+
+const CustomChartTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-white p-4 shadow-xl border border-slate-100 rounded-xl">
+        <p className="text-sm font-bold text-slate-800 mb-2">{label}</p>
+        <div className="space-y-1">
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center justify-between gap-8">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: entry.color }} />
+                <span className="text-xs text-slate-500">{entry.name}:</span>
+              </div>
+              <span className="text-xs font-bold text-slate-800">
+                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(entry.value)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
+
+// --- MAIN DASHBOARD VIEW ---
+
+interface DashboardViewProps {
+  residents: Resident[];
+  expenses: Expense[];
+}
+
+const DashboardView: React.FC<DashboardViewProps> = ({ residents, expenses }) => {
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
+
+  // Fungsi helper untuk parsing tanggal yang aman
+  const parseSafeDate = (dateInput: any) => {
+    const d = new Date(dateInput);
+    return isNaN(d.getTime()) ? new Date(0) : d;
+  };
+
+  // Mendapatkan semua data pembayaran yang telah diflatkan
+  const allPayments = useMemo(() => {
+    return residents.flatMap(r => (r.payments || []).map(p => ({
+      ...p,
+      residentId: r.id,
+      residentName: r.name
+    })));
+  }, [residents]);
+
+  const stats = useMemo(() => {
+    const startOfCurrentMonth = new Date(selectedYear, selectedMonth - 1, 1);
+    
+    // 1. Saldo Awal: Benar-benar dari seluruh sejarah sebelum bulan ini
+    const priorIn = allPayments
+      .filter(p => parseSafeDate(p.date) < startOfCurrentMonth)
+      .reduce((sum, p) => sum + p.amount, 0);
+
+    const priorOut = expenses
+      .filter(e => parseSafeDate(e.date) < startOfCurrentMonth)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const saldoAwal = priorIn - priorOut;
+
+    // 2. Data Bulan Berjalan
+    const currentMonthPayments = allPayments.filter(p => {
+      const d = parseSafeDate(p.date);
+      return d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear;
+    });
+
+    const currentMonthExpenses = expenses.filter(e => {
+      const d = parseSafeDate(e.date);
+      return d.getMonth() === (selectedMonth - 1) && d.getFullYear() === selectedYear;
+    });
+
+    const totalIncome = currentMonthPayments.reduce((sum, p) => sum + p.amount, 0);
+    const totalExpenses = currentMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
+    
+    // Perbaikan kategori: mencakup p.type atau p.category
+    const incomeKas = currentMonthPayments
+      .filter(p => (p as any).type === 'kas' || (p as any).category === 'kas')
+      .reduce((sum, p) => sum + p.amount, 0);
+    
+    const incomeLainnya = totalIncome - incomeKas;
+
+    const saldoAkhir = saldoAwal + totalIncome - totalExpenses;
+
+    // 3. Persentase Kepatuhan (Berdasarkan warga UNIK yang bayar)
+    const activeResidents = residents.filter(r => r.status === 'owner' || r.status === 'renter');
+    const uniquePayeesCount = new Set(currentMonthPayments.map(p => p.residentId)).size;
+    const collectionRate = activeResidents.length > 0 
+      ? (uniquePayeesCount / activeResidents.length) * 100 
+      : 0;
+
+    return {
+      saldoAwal,
+      totalIncome,
+      incomeKas,
+      incomeLainnya,
+      totalExpenses,
+      saldoAkhir,
+      collectionRate,
+      activeCount: activeResidents.length,
+      transactionCount: currentMonthPayments.length + currentMonthExpenses.length
+    };
+  }, [allPayments, expenses, selectedMonth, selectedYear, residents]);
+
+  const chartData = useMemo(() => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+    
+    // Hitung saldo penutup tahun lalu sebagai modal awal grafik tahun ini
+    const priorYearsIn = allPayments.filter(p => parseSafeDate(p.date).getFullYear() < selectedYear)
+      .reduce((sum, p) => sum + p.amount, 0);
+    const priorYearsOut = expenses.filter(e => parseSafeDate(e.date).getFullYear() < selectedYear)
+      .reduce((sum, e) => sum + e.amount, 0);
+    
+    let runningBalance = priorYearsIn - priorYearsOut;
+
+    return months.map((month, index) => {
+      const mIncome = allPayments
+        .filter(p => {
+          const d = parseSafeDate(p.date);
+          return d.getMonth() === index && d.getFullYear() === selectedYear;
+        })
+        .reduce((sum, p) => sum + p.amount, 0);
+
+      const mExpense = expenses
+        .filter(e => {
+          const d = parseSafeDate(e.date);
+          return d.getMonth() === index && d.getFullYear() === selectedYear;
+        })
+        .reduce((sum, e) => sum + e.amount, 0);
+
+      runningBalance += (mIncome - mExpense);
+
+      return {
+        name: month,
+        pemasukan: mIncome,
+        pengeluaran: mExpense,
+        saldo: runningBalance
+      };
+    });
+  }, [allPayments, expenses, selectedYear]);
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0
+    }).format(value);
+  };
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      {/* Header & Filter */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <div>
+          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <Calculator className="text-indigo-600 h-5 w-5" />
+            Laporan Keuangan Terpadu
+          </h2>
+          <p className="text-sm text-slate-500">Saldo berjalan terakumulasi otomatis per periode</p>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <select 
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(parseInt(e.target.value))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+          >
+            {['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'].map((m, i) => (
+              <option key={i} value={i + 1}>{m}</option>
+            ))}
+          </select>
+          <select 
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+          >
+            {[2024, 2025, 2026].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Statistik Utama */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <SummaryCard
+          title="Saldo Awal Bulan"
+          value={formatCurrency(stats.saldoAwal)}
+          icon={Wallet}
+          trend={{ value: "Saldo Carry-over", isPositive: true }}
+          color="blue"
+          subtitle="Sisa kas periode sebelumnya"
+        />
+        <SummaryCard
+          title="Total Pemasukan"
+          value={formatCurrency(stats.totalIncome)}
+          icon={TrendingUp}
+          trend={{ value: `+${formatCurrency(stats.totalIncome)}`, isPositive: true }}
+          color="green"
+          subtitle={`Kas: ${formatCurrency(stats.incomeKas)}`}
+        />
+        <SummaryCard
+          title="Total Pengeluaran"
+          value={formatCurrency(stats.totalExpenses)}
+          icon={TrendingDown}
+          trend={{ value: `-${formatCurrency(stats.totalExpenses)}`, isPositive: false }}
+          color="red"
+          subtitle={`${stats.transactionCount} Transaksi keluar`}
+        />
+        <SummaryCard
+          title="Saldo Akhir Bulan"
+          value={formatCurrency(stats.saldoAkhir)}
+          icon={Calculator}
+          trend={{ 
+            value: stats.saldoAkhir >= stats.saldoAwal ? "Surplus" : "Defisit", 
+            isPositive: stats.saldoAkhir >= stats.saldoAwal 
+          }}
+          color="indigo"
+          subtitle="Akan menjadi saldo awal bulan depan"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Grafik Area & Bar */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+          <div className="mb-6">
+            <h3 className="text-lg font-bold text-slate-800">Visualisasi Arus Kas {selectedYear}</h3>
+            <p className="text-sm text-slate-500">Perbandingan pemasukan bulanan vs akumulasi saldo riil</p>
+          </div>
+          <div className="h-[350px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="colorPemasukan" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#22c55e" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#22c55e" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorSaldo" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#6366f1" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                <YAxis hide={true} />
+                <Tooltip content={<CustomChartTooltip />} />
+                <Legend verticalAlign="top" height={36}/>
+                <Area name="Pemasukan" type="monotone" dataKey="pemasukan" stroke="#22c55e" strokeWidth={2} fillOpacity={1} fill="url(#colorPemasukan)" />
+                <Area name="Saldo Berjalan" type="monotone" dataKey="saldo" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorSaldo)" />
+                <Bar name="Pengeluaran" dataKey="pengeluaran" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={20} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Panel Rincian */}
+        <div className="space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+              <Info className="h-5 w-5 text-indigo-500" />
+              Detail Mutasi Periode
+            </h3>
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <span className="text-sm text-slate-600 font-medium">Iuran Kas (Pokok)</span>
+                <span className="font-semibold text-slate-800">{formatCurrency(stats.incomeKas)}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-slate-50 rounded-xl">
+                <span className="text-sm text-slate-600 font-medium">Iuran Acara/Lainnya</span>
+                <span className="font-semibold text-slate-800">{formatCurrency(stats.incomeLainnya)}</span>
+              </div>
+              <div className="h-px bg-slate-100 my-2" />
+              <div className="flex justify-between items-center px-1">
+                <span className="text-sm font-bold text-slate-700">Total Arus Masuk</span>
+                <span className="font-bold text-green-600">+{formatCurrency(stats.totalIncome)}</span>
+              </div>
+              <div className="flex justify-between items-center px-1">
+                <span className="text-sm font-bold text-slate-700">Total Arus Keluar</span>
+                <span className="font-bold text-red-600">-{formatCurrency(stats.totalExpenses)}</span>
+              </div>
+              <div className="bg-indigo-600 p-4 rounded-xl text-white mt-4 shadow-sm shadow-indigo-200">
+                <div className="flex justify-between items-center opacity-80 text-[10px] uppercase tracking-wider font-bold mb-1">
+                  <span>Sisa Dana Bersih Bulan Ini</span>
+                </div>
+                <div className="text-2xl font-bold">
+                  {formatCurrency(stats.totalIncome - stats.totalExpenses)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Kepatuhan */}
+          <div className="bg-gradient-to-br from-slate-800 to-slate-900 p-6 rounded-2xl shadow-md text-white">
+            <h3 className="text-lg font-bold mb-1">Partisipasi Iuran</h3>
+            <p className="text-slate-400 text-xs mb-4">Warga yang telah membayar iuran bulan ini</p>
+            <div className="flex items-end gap-2 mb-3">
+              <span className="text-4xl font-bold">{stats.collectionRate.toFixed(1)}%</span>
+              <span className="text-slate-400 text-sm mb-1">Terbayar</span>
+            </div>
+            <div className="w-full bg-white/10 rounded-full h-3">
+              <div 
+                className="bg-indigo-500 h-3 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(99,102,241,0.5)]" 
+                style={{ width: `${Math.min(stats.collectionRate, 100)}%` }}
+              ></div>
+            </div>
+            <p className="mt-4 text-[10px] text-slate-400 leading-relaxed italic">
+              * Dihitung dari {stats.activeCount} warga aktif.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default DashboardView;
