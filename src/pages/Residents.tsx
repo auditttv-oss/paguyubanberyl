@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchResidentsWithStatus, updateResident, createResident, updateResidentPayment, deleteResident } from '../services/dataService';
+import { fetchResidentsWithStatus, updateResident, createResident, updateResidentPayment, deleteResident, fetchAllPayments } from '../services/dataService';
 import { 
   Users, 
   Search, 
@@ -55,12 +55,22 @@ export const Residents = () => {
     queryFn: () => fetchResidentsWithStatus(selectedMonth, selectedYear),
   });
 
+  // Fetch all payments data
+  const { 
+    data: payments = [], 
+  } = useQuery({
+    queryKey: ['allPayments'],
+    queryFn: fetchAllPayments,
+  });
+
   // Mutations
   const paymentMutation = useMutation({
     mutationFn: ({ id, isPaid, month, year }: { id: string; isPaid: boolean; month: number; year: number }) =>
       updateResidentPayment(id, isPaid, month, year),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
+      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
     }
   });
 
@@ -68,6 +78,8 @@ export const Residents = () => {
     mutationFn: deleteResident,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
+      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
     }
   });
 
@@ -75,6 +87,8 @@ export const Residents = () => {
     mutationFn: createResident,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
+      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
       setIsModalOpen(false);
       setSelectedResident(null);
     }
@@ -84,6 +98,8 @@ export const Residents = () => {
     mutationFn: updateResident,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
+      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
       setIsModalOpen(false);
       setSelectedResident(null);
     }
@@ -92,7 +108,12 @@ export const Residents = () => {
   // Statistics
   const stats = useMemo(() => {
     const total = residents.length;
-    const occupied = residents.filter(r => r.occupancyStatus !== 'Menetap' && r.occupancyStatus !== 'Penyewa' && r.occupancyStatus !== 'Kunjungan' && r.occupancyStatus !== 'Ditempati 2026').length;
+    // Perbaikan: Occupied adalah Menetap + Penyewa + Ditempati 2026 (bukan filter NOT IN)
+    const occupied = residents.filter(r => 
+      r.occupancyStatus === 'Menetap' || 
+      r.occupancyStatus === 'Penyewa' || 
+      r.occupancyStatus === 'Ditempati 2026'
+    ).length;
     const paidKas = residents.filter(r => r.isPaidCurrentMonth).length;
     const paidSukarela = residents.filter(r => (r.eventDuesAmount || 0) > 0).length;
     const totalKas = paidKas * 10000;
@@ -162,6 +183,18 @@ export const Residents = () => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
   }, [residents]);
+
+  // Calculate total paid months for each resident
+  const residentPaymentStats = useMemo(() => {
+    return residents.map(resident => {
+      // Count how many months this resident has paid
+      const paidMonths = payments?.filter(p => p.resident_id === resident.id).length || 0;
+      return {
+        ...resident,
+        totalPaidMonths: paidMonths
+      };
+    });
+  }, [residents, payments]);
 
   // Filter and sort residents
   const processedResidents = useMemo(() => {
@@ -266,20 +299,20 @@ export const Residents = () => {
       </div>
 
       {/* Enhanced Stats Cards with Infographics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* Total KK Card */}
-        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 p-6 rounded-2xl shadow-lg text-white">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-6">
+        {/* Combined Stats Card */}
+        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 rounded-xl">
-              <Users className="w-6 h-6" />
+              <DollarSign className="w-6 h-6" />
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold">{stats.total}</p>
-              <p className="text-emerald-100 text-sm">Total KK</p>
+              <p className="text-blue-100 text-sm">Total KK</p>
             </div>
           </div>
           <div className="bg-white/10 rounded-lg p-3">
-            <div className="flex justify-between text-sm">
+            <div className="flex justify-between text-sm mb-2">
               <span>Occupancy Rate</span>
               <span className="font-bold">{stats.occupancyRate}%</span>
             </div>
@@ -290,39 +323,32 @@ export const Residents = () => {
               />
             </div>
           </div>
-        </div>
-
-        {/* Financial Overview Card */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 rounded-xl">
-              <DollarSign className="w-6 h-6" />
+          <div className="bg-white/10 rounded-lg p-3">
+            <div className="flex justify-between text-sm mb-2">
+              <span>Total Dana</span>
+              <span className="font-bold">Rp {(stats.totalKas + stats.totalSukarela).toLocaleString('id-ID')}</span>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-bold">Rp {(stats.totalKas + stats.totalSukarela).toLocaleString('id-ID')}</p>
-              <p className="text-blue-100 text-sm">Total Dana</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/10 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-100">Iuran Wajib</p>
-              <p className="font-bold">Rp {stats.totalKas.toLocaleString('id-ID')}</p>
-            </div>
-            <div className="bg-white/10 rounded-lg p-2 text-center">
-              <p className="text-xs text-blue-100">Sukarela</p>
-              <p className="font-bold">Rp {stats.totalSukarela.toLocaleString('id-ID')}</p>
+            <div className="grid grid-cols-2 gap-4 mt-2">
+              <div>
+                <p className="text-xs text-blue-100 mb-1">Iuran Wajib</p>
+                <p className="font-bold text-sm">Rp {stats.totalKas.toLocaleString('id-ID')}</p>
+              </div>
+              <div>
+                <p className="text-xs text-blue-100 mb-1">Sukarela</p>
+                <p className="font-bold text-sm">Rp {stats.totalSukarela.toLocaleString('id-ID')}</p>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Payment Rate Card - Kas & Sukarela */}
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white">
+        {/* Payment Rate Card */}
+        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white mb-6">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 rounded-xl">
               <Target className="w-6 h-6" />
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold">{stats.paymentRate}%</p>
+              <p className="text-3xl font-bold">{stats.paymentRate}%</p>
               <p className="text-purple-100 text-sm">Tingkat Bayar Kas</p>
             </div>
           </div>
@@ -354,135 +380,150 @@ export const Residents = () => {
           </div>
         </div>
 
-        {/* Activity Card */}
+        {/* Top Contributors Card */}
         <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 rounded-xl">
               <Activity className="w-6 h-6" />
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold">Rp {stats.avgSukarela.toLocaleString('id-ID')}</p>
-              <p className="text-amber-100 text-sm">Rata-rata Sukarela</p>
+              <p className="text-lg font-bold">Top Contributors</p>
+              <p className="text-amber-100 text-sm">Donatur & Pembayar Terbanyak</p>
             </div>
           </div>
-          <div className="bg-white/10 rounded-lg p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Partisipasi</span>
-              <div className="flex items-center gap-1">
-                {residents.filter(r => r.eventDuesAmount > 0).length > 0 && (
-                  <>
-                    <TrendingUp className="w-4 h-4" />
-                    <span className="font-bold text-sm">
-                      {Math.round((residents.filter(r => r.eventDuesAmount > 0).length / stats.total) * 100)}%
-                    </span>
-                  </>
-                )}
-              </div>
+          <div className="space-y-3">
+            {/* Top 3 Donatur Acara */}
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-xs font-bold mb-2 text-amber-100">🏆 Top 3 Donatur Acara</p>
+              {residents
+                .filter(r => (r.eventDuesAmount || 0) > 0)
+                .sort((a, b) => (b.eventDuesAmount || 0) - (a.eventDuesAmount || 0))
+                .slice(0, 3)
+                .map((resident, index) => (
+                  <div key={resident.id} className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">{index + 1}.</span>
+                      <span className="text-xs">{resident.fullName}</span>
+                    </div>
+                    <span className="text-xs font-bold">Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}</span>
+                  </div>
+                ))}
+            </div>
+            
+            {/* Top 3 Pembayar Kas Terbanyak */}
+            <div className="bg-white/10 rounded-lg p-3">
+              <p className="text-xs font-bold mb-2 text-amber-100">💰 Top 3 Pembayar Kas Terbanyak</p>
+              {residentPaymentStats
+                .filter(r => r.totalPaidMonths > 0)
+                .sort((a, b) => (b.totalPaidMonths || 0) - (a.totalPaidMonths || 0))
+                .slice(0, 3)
+                .map((resident, index) => (
+                  <div key={resident.id} className="flex items-center justify-between py-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold">{index + 1}.</span>
+                      <span className="text-xs">{resident.fullName}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-bold">
+                        {resident.totalPaidMonths || 0} bulan
+                      </span>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </div>
-      </div>
 
-      {/* Enhanced Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        {/* Status Distribution Pie Chart */}
-        <div className="bg-white p-6 rounded-2xl shadow-lg border">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-emerald-600" />
-            Status Hunian Warga
-          </h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <RechartsPieChart>
-              <Pie
-                data={statusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={(entry) => `${entry.percentage}%`}
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                <Cell fill="#10b981" />
-                <Cell fill="#3b82f6" />
-                <Cell fill="#f59e0b" />
-                <Cell fill="#8b5cf6" />
-              </Pie>
-            </RechartsPieChart>
-          </ResponsiveContainer>
-          <div className="grid grid-cols-2 gap-2 mt-4">
-            {statusData.map((item, index) => (
-              <div key={item.name} className="flex items-center gap-2 text-sm">
-                <div 
-                  className={`w-3 h-3 rounded-full ${
-                    index === 0 ? 'bg-emerald-500' : 
-                    index === 1 ? 'bg-blue-500' : 
-                    index === 2 ? 'bg-amber-500' : 'bg-purple-500'
-                  }`} 
-                />
-                <span className="text-gray-600">{item.name}: {item.value}</span>
-              </div>
-            ))}
+        {/* Quick Search Card */}
+        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-6 rounded-2xl shadow-lg text-white">
+          <div className="flex items-center justify-between mb-4">
+            <div className="p-3 bg-white/20 rounded-xl">
+              <Search className="w-6 h-6" />
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-bold">Quick Search</p>
+              <p className="text-indigo-100 text-sm">Pencarian & Edit Warga</p>
+            </div>
           </div>
-        </div>
-
-        {/* Top 10 Early Payers */}
-        <div className="bg-white p-6 rounded-2xl shadow-lg border">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-emerald-600" />
-            Top 10 Paling Awal Bayar
-          </h3>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {topEarlyPayers.length > 0 ? (
-              topEarlyPayers.map((payer, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-emerald-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-emerald-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                      {index + 1}
+          <div className="space-y-3">
+            <div className="bg-white/10 rounded-lg p-3">
+              <input
+                type="text"
+                placeholder="Cari nama, blok, atau catatan..."
+                className="w-full bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm text-white placeholder-white/70 focus:outline-none focus:border-white/50 focus:bg-white/30"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <div className="bg-white/10 rounded-lg p-3 max-h-64 overflow-y-auto">
+              <p className="text-xs font-bold mb-2 text-indigo-100">📋 Data Warga (Edit)</p>
+              {processedResidents.slice(0, 5).map((resident) => (
+                <div key={resident.id} className="bg-white/20 rounded-lg p-2 mb-2 last:mb-0">
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <span className="font-semibold">Nama:</span>
+                      <span className="ml-1">{resident.fullName}</span>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-800 text-sm">{payer.name}</p>
-                      <p className="text-xs text-gray-500">Blok {payer.block}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-emerald-600 font-medium">{payer.paymentDate}</p>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-center py-8">Belum ada data pembayaran</p>
-            )}
-          </div>
-        </div>
-
-        {/* Top 10 Biggest Sukarela Contributors */}
-        <div className="bg-white p-6 rounded-2xl shadow-lg border">
-          <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-600" />
-            Top 10 Sukarela Terbesar
-          </h3>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {topSukarelaContributors.length > 0 ? (
-              topSukarelaContributors.map((contributor, index) => (
-                <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                      {index + 1}
+                      <span className="font-semibold">Blok:</span>
+                      <span className="ml-1">{resident.blockNumber}</span>
                     </div>
                     <div>
-                      <p className="font-medium text-gray-800 text-sm">{contributor.name}</p>
-                      <p className="text-xs text-gray-500">Blok {contributor.block}</p>
+                      <span className="font-semibold">Status:</span>
+                      <span className="ml-1">{resident.occupancyStatus}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold">Kontak:</span>
+                      <span className="ml-1">{resident.phone || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold">Kas:</span>
+                      <span className="ml-1">{resident.isPaidCurrentMonth ? '✅' : '❌'}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold">Sukarela:</span>
+                      <span className="ml-1">Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="font-semibold">Catatan:</span>
+                      <span className="ml-1">{resident.notes || '-'}</span>
+                    </div>
+                    <div className="col-span-2 flex gap-1 mt-1">
+                      <button
+                        onClick={() => {
+                          setSelectedResident(resident);
+                          setIsModalOpen(true);
+                        }}
+                        className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        onClick={() => handlePaymentClick(resident)}
+                        className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
+                      >
+                        💰 Kas
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Hapus ${resident.fullName}?`)) {
+                            deleteMutation.mutate(resident.id);
+                          }
+                        }}
+                        className="bg-red-500/30 hover:bg-red-500/40 rounded px-2 py-1 text-xs transition-colors"
+                      >
+                        🗑️ Hapus
+                      </button>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-bold text-blue-600">Rp {contributor.amount.toLocaleString('id-ID')}</p>
-                  </div>
                 </div>
-              ))
-            ) : (
-              <p className="text-gray-500 text-center py-8">Belum ada data sukarela</p>
-            )}
+              ))}
+              {processedResidents.length === 0 && (
+                <p className="text-center text-white/70 text-xs py-4">
+                  Tidak ada data warga yang ditemukan
+                </p>
+              )}
+            </div>
           </div>
         </div>
       </div>
