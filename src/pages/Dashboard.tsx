@@ -191,13 +191,11 @@ export const Dashboard = () => {
     
     return data;
   }, [payments, expenses, selectedYear]);
-  
-  // Calculate total all kas
-  const totalAllKas = (monthlyPaymentData.wajibSaldoAkhir + monthlyPaymentData.sukarelaSaldoTersedia);
-  
-  // Calculate grand total (all kas - all expenses)
-  const totalSukarelaOut = expenses?.filter(e => e.category === 'Acara').reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-  const grandTotal = totalAllKas - (yearlyTotalOut + totalSukarelaOut);
+
+  // Calculate grand total (all income - all expenses)
+  const totalIncome = yearlyTotalIn + monthlyPaymentData.sukarelaTotalMasuk; // Kas bulanan + Total Kas Acara (semua bulan)
+  const totalExpenses = yearlyTotalOut + monthlyPaymentData.sukarelaTotalKeluar; // Pengeluaran operasional + Total Pengeluaran Acara (semua bulan)
+  const grandTotal = totalIncome - totalExpenses;
 
   // Chart data
   const occupancyChartData = useMemo(() => [
@@ -278,31 +276,107 @@ export const Dashboard = () => {
 
         {/* Top Metrics Section - Realtime Overview */}
         <section className="mb-6 md:mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-1 gap-4">
-            {/* Total Warga Realtime */}
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <UsersIcon size={20} />
+          {/* Baris 1: Total Warga + Grand Total (1 card kesamping) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-4">
+            {/* Combined Total Warga & Grand Total Card */}
+            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 rounded-2xl shadow-lg lg:col-span-2">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Total Warga Section */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-white/20 rounded-lg">
+                        <UsersIcon size={20} />
+                      </div>
+                      <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Realtime</span>
+                    </div>
+                    <p className="text-3xl font-bold mb-1">{stats.total}</p>
+                    <p className="text-sm opacity-90">Total Warga Tercatat</p>
+                    <p className="text-xs opacity-75 mt-2">Kepala Keluarga</p>
+                  </div>
                 </div>
-                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Realtime</span>
-              </div>
-              <p className="text-2xl font-bold mb-1">{stats.total}</p>
-              <p className="text-sm opacity-90">Total Warga Tercatat</p>
-              <p className="text-xs opacity-75 mt-2">Kepala Keluarga</p>
-            </div>
 
-            {/* Grand Total Kas */}
-            <div className="bg-gradient-to-br from-green-500 to-green-600 text-white p-5 rounded-2xl shadow-lg">
+                {/* Grand Total Section */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="p-2 bg-white/20 rounded-lg">
+                        <CreditCard size={20} />
+                      </div>
+                      <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Grand Total</span>
+                    </div>
+                    <p className="text-3xl font-bold mb-1">{formatCurrency(grandTotal)}</p>
+                    <p className="text-sm opacity-90">Grand Total Kas</p>
+                    <div className="mt-2 pt-2 border-t border-white/20">
+                      <p className="text-xs opacity-75">Total Masuk: {formatCurrency(totalIncome)}</p>
+                      <p className="text-xs opacity-75">Total Keluar: {formatCurrency(totalExpenses)}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Baris 2: Kas Bulanan, Kas Acara, Total Kas 12 Bulan (3 kolom) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Kas Bulanan Berjalan */}
+            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 rounded-2xl shadow-lg">
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2 bg-white/20 rounded-lg">
                   <Wallet size={20} />
                 </div>
-                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Grand Total</span>
+                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Bulan {getMonthName(selectedMonth)}</span>
               </div>
-              <p className="text-3xl font-bold mb-1">{formatCurrency(grandTotal)}</p>
-              <p className="text-sm opacity-90">Total All Kas</p>
-              <p className="text-xs opacity-75 mt-2">Kas Bulanan + Kas Acara - Pengeluaran</p>
+              <p className="text-lg font-bold mb-1">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.income || 0)}</p>
+              <p className="text-xs opacity-75">Pemasukan</p>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-sm font-bold">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.expense || 0)}</p>
+                <p className="text-xs opacity-75">Pengeluaran</p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-lg font-bold">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.cumulativeBalance || 0)}</p>
+                <p className="text-xs opacity-75">Saldo Kumulatif</p>
+              </div>
+            </div>
+
+            {/* Kas Acara Berjalan */}
+            <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-5 rounded-2xl shadow-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <Gift size={20} />
+                </div>
+                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Bulan {getMonthName(selectedMonth)}</span>
+              </div>
+              <p className="text-lg font-bold mb-1">{formatCurrency(currentMonthSukarelaIn)}</p>
+              <p className="text-xs opacity-75">Total Donasi</p>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-sm font-bold">{formatCurrency(currentMonthSukarelaOut)}</p>
+                <p className="text-xs opacity-75">Pengeluaran Acara</p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-lg font-bold">{formatCurrency(currentMonthSukarelaIn - currentMonthSukarelaOut)}</p>
+                <p className="text-xs opacity-75">Sisa Saldo Acara</p>
+              </div>
+            </div>
+
+            {/* Total Kas 12 Bulan */}
+            <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-5 rounded-2xl shadow-lg">
+              <div className="flex items-center justify-between mb-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <TrendingUp size={20} />
+                </div>
+                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">12 Bulan</span>
+              </div>
+              <p className="text-2xl font-bold mb-1">{formatCurrency(yearlyTotalIn)}</p>
+              <p className="text-sm opacity-90">Total Kas 12 Bulan</p>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-sm font-bold">{formatCurrency(yearlyTotalOut)}</p>
+                <p className="text-xs opacity-75">Total pengeluaran Kas 12 bulan</p>
+              </div>
+              <div className="mt-2 pt-2 border-t border-white/20">
+                <p className="text-lg font-bold">{formatCurrency(yearlyTotalIn - yearlyTotalOut)}</p>
+                <p className="text-xs opacity-75">Sisa Saldo 12 bulan</p>
+              </div>
             </div>
           </div>
         </section>
