@@ -474,7 +474,7 @@ export const Residents = () => {
                     </div>
                     <div>
                       <span className="font-semibold">Kontak:</span>
-                      <span className="ml-1">{resident.phone || '-'}</span>
+                      <span className="ml-1">{resident.whatsapp || '-'}</span>
                     </div>
                     <div>
                       <span className="font-semibold">Kas:</span>
