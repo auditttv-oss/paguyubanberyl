@@ -1,32 +1,29 @@
 import React, { useState, useMemo } from 'react';
-import { ResidentWithPayment } from '../types';
+import { Resident } from '../types';
 import { 
   Trash2, 
   MessageCircle, 
   ArrowUpDown, 
-  ShieldOff, 
   Search, 
   Lock, 
   CheckCircle2, 
-  XCircle,
-  Edit2,
-  Save,
-  X,
-  Info,
-  Users,
-  Home,
-  TrendingUp,
-  PieChart,
-  BarChart3,
-  Percent,
+  XCircle, 
+  Edit2, 
+  Save, 
+  X, 
+  Info, 
+  Users, 
+  Home, 
+  BarChart3, 
+  Percent, 
   Wallet
 } from 'lucide-react';
 
 interface ResidentTableProps {
-  residents: ResidentWithPayment[];
-  onUpdate: (updatedResident: ResidentWithPayment) => Promise<void>;
+  residents: Resident[];
+  onUpdate: (updatedResident: Resident) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
-  onTogglePayment: (resident: ResidentWithPayment) => Promise<void>;
+  onTogglePayment: (resident: Resident) => Promise<void>;
   isReadOnly?: boolean;
   selectedMonthName: string;
 }
@@ -46,7 +43,7 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
   const [sortKey, setSortKey] = useState<SortKey>('blockNumber');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState<Partial<ResidentWithPayment>>({});
+  const [editForm, setEditForm] = useState<Partial<Resident>>({});
 
   // --- LOGIKA SORTING ---
   const handleSort = (key: SortKey) => {
@@ -59,7 +56,8 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
   };
 
   // --- LOGIKA EDITING ---
-  const startEdit = (resident: ResidentWithPayment) => {
+  const startEdit = (resident: Resident) => {
+    if (isReadOnly) return; // Prevent edit in read-only mode
     setEditingId(resident.id);
     setEditForm({ ...resident });
   };
@@ -70,8 +68,8 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
   };
 
   const saveEdit = async () => {
-    if (editingId && editForm) {
-      await onUpdate(editForm as ResidentWithPayment);
+    if (editingId && editForm && !isReadOnly) {
+      await onUpdate(editForm as Resident);
       setEditingId(null);
       setEditForm({});
     }
@@ -136,7 +134,7 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
     };
   }, [processedResidents]);
 
-  // PERBAIKAN: Fungsi untuk menentukan warna status hunian
+  // Fungsi untuk menentukan warna status hunian
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Menetap':
@@ -251,7 +249,7 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
         {/* Detail Status Hunian */}
         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
           <h4 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
-            <PieChart size={16} /> Distribusi Status Hunian
+            <BarChart3 size={16} /> Distribusi Status Hunian
           </h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {stats.statusStats.map((item, index) => (
@@ -269,9 +267,9 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
                       style={{ 
                         width: `${item.percentage}%`,
                         backgroundColor: index === 0 ? '#3b82f6' : 
-                                        index === 1 ? '#10b981' : 
-                                        index === 2 ? '#f59e0b' : 
-                                        '#ef4444'
+                                         index === 1 ? '#10b981' : 
+                                         index === 2 ? '#f59e0b' : 
+                                         '#ef4444'
                       }}
                     ></div>
                   </div>
@@ -387,7 +385,7 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
                     )}
                   </td>
 
-                  {/* STATUS HUNIAN - PERBAIKAN: Gunakan getStatusColor */}
+                  {/* STATUS HUNIAN */}
                   <td className="px-4 py-4">
                     <span className={`px-3 py-1 rounded-full font-bold text-[10px] ${getStatusColor(r.occupancyStatus)}`}>
                       {r.occupancyStatus}
@@ -431,11 +429,11 @@ export const ResidentTable: React.FC<ResidentTableProps> = ({
                       </div>
                     ) : (
                       <div className={`px-4 py-1.5 rounded-lg inline-block ${
-                        r.eventDuesAmount > 0 
+                        r.eventDuesAmount && r.eventDuesAmount > 0 
                           ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' 
                           : 'bg-gray-100 text-gray-400 border border-gray-200'
                       }`}>
-                        Rp {r.eventDuesAmount.toLocaleString('id-ID')}
+                        Rp {(r.eventDuesAmount || 0).toLocaleString('id-ID')}
                       </div>
                     )}
                   </td>
