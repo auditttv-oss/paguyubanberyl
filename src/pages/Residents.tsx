@@ -474,7 +474,11 @@ export const Residents = () => {
                     </div>
                     <div>
                       <span className="font-semibold">Kontak:</span>
-                      <span className="ml-1">{resident.whatsapp || '-'}</span>
+                      {user ? (
+                        <span className="ml-1">{resident.whatsapp || '-'}</span>
+                      ) : (
+                        <span className="ml-1 text-white/70 italic">🔒 Terproteksi</span>
+                      )}
                     </div>
                     <div>
                       <span className="font-semibold">Kas:</span>
@@ -489,31 +493,40 @@ export const Residents = () => {
                       <span className="ml-1">{resident.notes || '-'}</span>
                     </div>
                     <div className="col-span-2 flex gap-1 mt-1">
-                      <button
-                        onClick={() => {
-                          setSelectedResident(resident);
-                          setIsModalOpen(true);
-                        }}
-                        className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
-                      >
-                        ✏️ Edit
-                      </button>
-                      <button
-                        onClick={() => handlePaymentClick(resident)}
-                        className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
-                      >
-                        💰 Kas
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Hapus ${resident.fullName}?`)) {
-                            deleteMutation.mutate(resident.id);
-                          }
-                        }}
-                        className="bg-red-500/30 hover:bg-red-500/40 rounded px-2 py-1 text-xs transition-colors"
-                      >
-                        🗑️ Hapus
-                      </button>
+                      {user && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setSelectedResident(resident);
+                              setIsModalOpen(true);
+                            }}
+                            className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            onClick={() => handlePaymentClick(resident)}
+                            className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
+                          >
+                            💰 Kas
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Hapus ${resident.fullName}?`)) {
+                                deleteMutation.mutate(resident.id);
+                              }
+                            }}
+                            className="bg-red-500/30 hover:bg-red-500/40 rounded px-2 py-1 text-xs transition-colors"
+                          >
+                            🗑️ Hapus
+                          </button>
+                        </>
+                      )}
+                      {!user && (
+                        <div className="flex gap-1 text-xs text-white/70 italic">
+                          <span className="bg-white/10 rounded px-2 py-1">🔒 Mode Tamu</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
