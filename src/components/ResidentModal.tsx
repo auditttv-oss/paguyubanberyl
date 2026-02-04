@@ -44,15 +44,23 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
     setLoading(true);
     try {
       if (resident?.id) {
-        // JIKA ADA ID -> JALANKAN UPDATE
+        // JIKA ADA ID -> JALANKAN UPDATE (hanya untuk user login)
+        if (!user) {
+          throw new Error("Akses ditolak: Fitur edit data hanya tersedia untuk pengguna yang sudah login");
+        }
         await updateResident({ ...form, id: resident.id });
         alert("✅ Data warga berhasil diperbarui!");
       } else {
-        // JIKA TIDAK ADA ID -> JALANKAN CREATE
+        // JIKA TIDAK ADA ID -> JALANKAN CREATE (boleh untuk tamu)
         await createResident(form);
-        alert("✅ Warga baru berhasil ditambahkan!");
+        alert("✅ Laporan diri berhasil dikirim! Data akan ditinjau oleh admin.");
       }
-      onSuccess();
+      // Force refresh data
+      if (onSuccess) {
+        onSuccess();
+      }
+      // Close modal
+      onClose();
     } catch (err: any) {
       alert("❌ Error: " + err.message);
     } finally {
@@ -62,8 +70,8 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
 
   if (!isOpen) return null;
 
-  // Cegah akses untuk mode tamu
-  if (!user) {
+  // Izinkan mode tamu untuk lapor diri, tapi hanya untuk create (bukan edit)
+  if (!user && resident) {
     return (
       <div className="fixed inset-0 bg-emerald-950/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
         <div className="bg-white rounded-[3rem] shadow-2xl w-full max-w-lg p-8 text-center">
@@ -72,7 +80,7 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
               <span className="text-2xl">🔒</span>
             </div>
             <h3 className="text-xl font-bold text-gray-800 mb-2">Akses Ditolak</h3>
-            <p className="text-gray-600 mb-4">Fitur ini hanya tersedia untuk pengguna yang sudah login.</p>
+            <p className="text-gray-600 mb-4">Fitur edit data hanya tersedia untuk pengguna yang sudah login.</p>
             <button 
               onClick={onClose}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium"

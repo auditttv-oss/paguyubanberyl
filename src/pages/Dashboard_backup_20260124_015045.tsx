@@ -1,3 +1,53 @@
+lockdown-install.js:1 SES Removing unpermitted intrinsics
+installHook.js:1  ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition. Error Component Stack
+    at BrowserRouter (index.tsx:789:3)
+    at AuthProvider (AuthContext.tsx:19:73)
+    at QueryClientProvider (QueryClientProvider.tsx:30:3)
+    at App (<anonymous>)
+overrideMethod @ installHook.js:1
+warnOnce @ deprecations.ts:9
+logDeprecation @ deprecations.ts:14
+logV6DeprecationWarnings @ deprecations.ts:26
+(anonymous) @ index.tsx:816
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+(anonymous) @ react-dom.development.js:26808
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+installHook.js:1  ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath. Error Component Stack
+    at BrowserRouter (index.tsx:789:3)
+    at AuthProvider (AuthContext.tsx:19:73)
+    at QueryClientProvider (QueryClientProvider.tsx:30:3)
+    at App (<anonymous>)
+overrideMethod @ installHook.js:1
+warnOnce @ deprecations.ts:9
+logDeprecation @ deprecations.ts:14
+logV6DeprecationWarnings @ deprecations.ts:37
+(anonymous) @ index.tsx:816
+commitHookEffectListMount @ react-dom.development.js:23189
+commitPassiveMountOnFiber @ react-dom.development.js:24965
+commitPassiveMountEffects_complete @ react-dom.development.js:24930
+commitPassiveMountEffects_begin @ react-dom.development.js:24917
+commitPassiveMountEffects @ react-dom.development.js:24905
+flushPassiveEffectsImpl @ react-dom.development.js:27078
+flushPassiveEffects @ react-dom.development.js:27023
+(anonymous) @ react-dom.development.js:26808
+workLoop @ scheduler.development.js:266
+flushWork @ scheduler.development.js:239
+performWorkUntilDeadline @ scheduler.development.js:533
+ddiomvflkgbejocbenol.supabase.co/rest/v1/residents?columns=%22full_name%22%2C%22block_number%22%2C%22whatsapp%22%2C%22occupancy_status%22%2C%22event_dues_amount%22%2C%22notes%22%2C%22created_at%22%2C%22updated_at%22:1   Failed to load resource: the server responded with a status of 400 ()
+[NEW] Explain Console errors by using Copilot in Edge: click
+         
+         to explain an error. 
+        Learn more
+        Don't show again
+DevTools extension 'React Developer Tools' registered with setOpenResourceHandler for all schemes, which is already registered by 'React Developer Tools'. This can lead to unexpected results.
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchResidentsWithStatus, togglePayment, deleteResident } from '../services/dataService';

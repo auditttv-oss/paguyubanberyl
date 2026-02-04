@@ -392,12 +392,17 @@ export const Residents = () => {
             </div>
           </div>
           <div className="space-y-3">
-            {/* 10 Data Warga Terbaru berdasarkan updatedAt */}
+            {/* 10 Data Warga Terbaru berdasarkan updatedAt dengan detail perubahan yang spesifik */}
             <div className="bg-white/10 rounded-lg p-3">
               <p className="text-xs font-bold mb-2 text-amber-100">📝 Update Terakhir</p>
               {residents
-                .filter(r => r.updatedAt)
-                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .filter(r => r.updatedAt) // Filter data yang ada updatedAt
+                .sort((a, b) => {
+                  // Sort berdasarkan updatedAt descending (terbaru dulu)
+                  const timeA = a.updatedAt || 0;
+                  const timeB = b.updatedAt || 0;
+                  return timeB - timeA;
+                })
                 .slice(0, 10)
                 .map((resident, index) => {
                   const updateTime = new Date(resident.updatedAt);
@@ -418,17 +423,58 @@ export const Residents = () => {
                     timeText = updateTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
                   }
                   
+                  // Logika deteksi jenis perubahan yang lebih akurat
+                  let changeIcon = '🔄';
+                  let changeTypeText = 'Update';
+                  let changeDetailText = 'Data diperbarui';
+                  
+                  // Cek apakah ini data baru atau data lama yang diupdate
+                  // Data baru ditampilkan sebagai "Warga Baru" selama 7 hari
+                  const timeDiff = Date.now() - (resident.updatedAt || 0);
+                  const isNewResident = timeDiff < (7 * 24 * 60 * 60 * 1000); // 7 hari
+                  const hasUpdateHistory = resident.notes && resident.notes.includes('[UPDATE:');
+                  
+                  if (isNewResident && !hasUpdateHistory) {
+                    // Ini adalah data baru (masih dalam 7 hari)
+                    changeIcon = '➕';
+                    changeTypeText = 'Warga Baru';
+                    changeDetailText = 'Warga baru ditambahkan';
+                  } else {
+                    // Ini adalah data lama yang diupdate
+                    changeIcon = '📝';
+                    changeTypeText = 'Data Diubah';
+                    
+                    // Coba ekstrak detail perubahan dari notes
+                    if (hasUpdateHistory) {
+                      const match = resident.notes.match(/\[UPDATE: (.+)\]/);
+                      if (match && match[1]) {
+                        changeDetailText = match[1];
+                      } else {
+                        changeDetailText = 'Data warga diperbarui';
+                      }
+                    } else {
+                      changeDetailText = 'Data warga diperbarui';
+                    }
+                  }
+                  
                   return (
-                    <div key={resident.id} className="flex items-center justify-between py-1 border-b border-white/10 last:border-0">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className="text-xs font-bold text-amber-200">{index + 1}.</span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-xs truncate block">{resident.fullName}</span>
-                          <span className="text-xs text-amber-200">{resident.blockNumber}</span>
+                    <div key={resident.id} className="py-2 border-b border-white/10 last:border-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-xs font-bold text-amber-200">{index + 1}.</span>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-medium truncate block">{resident.fullName}</span>
+                            <span className="text-xs text-amber-200">{resident.blockNumber}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-xs font-bold">{timeText}</span>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold">{timeText}</span>
+                      <div className="flex items-center gap-2 ml-6">
+                        <span className="text-xs">{changeIcon} {changeTypeText}</span>
+                        <span className="text-xs text-amber-200">•</span>
+                        <span className="text-xs text-amber-200 break-words">{changeDetailText}</span>
                       </div>
                     </div>
                   );

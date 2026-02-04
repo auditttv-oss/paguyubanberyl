@@ -15,6 +15,9 @@ export interface Resident {
   eventDuesAmount: number;
   notes: string;
   updatedAt: number;
+  createdAt?: number;
+  changeType?: string;
+  changeDetail?: string;
   isPaidCurrentMonth?: boolean;
   familyMembers?: number;
   eventDuesCategory?: string;

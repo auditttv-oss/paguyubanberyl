@@ -16,7 +16,7 @@ export const fetchResidents = async (): Promise<Resident[]> => {
   return (data || []).map((r: any) => ({
     id: r.id, fullName: r.full_name, blockNumber: r.block_number, whatsapp: r.whatsapp,
     occupancyStatus: r.occupancy_status, eventDuesAmount: Number(r.event_dues_amount) || 0,
-    notes: r.notes || '', updatedAt: r.updated_at || Date.now()
+    notes: r.notes || ''
   }));
 };
 
@@ -28,69 +28,23 @@ export const fetchResidentsWithStatus = async (m: number, y: number): Promise<Re
   return res.map((r: any) => ({
     id: r.id, fullName: r.full_name, blockNumber: r.block_number, whatsapp: r.whatsapp,
     occupancyStatus: r.occupancy_status, eventDuesAmount: Number(r.event_dues_amount) || 0,
-    notes: r.notes || '', updatedAt: r.updated_at || Date.now(), isPaidCurrentMonth: paidIds.has(r.id)
+    notes: r.notes || '', isPaidCurrentMonth: paidIds.has(r.id)
   }));
 };
 
 export const createResident = async (r: any) => {
   await supabase.from('residents').insert([{
-    full_name: r.fullName, 
-    block_number: r.blockNumber, 
-    whatsapp: r.whatsapp,
-    occupancy_status: r.occupancyStatus, 
-    event_dues_amount: Number(r.eventDuesAmount),
-    notes: r.notes,
-    updated_at: Date.now()
+    full_name: r.fullName, block_number: r.blockNumber, whatsapp: r.whatsapp,
+    occupancy_status: r.occupancyStatus, event_dues_amount: Number(r.eventDuesAmount),
+    notes: r.notes
   }]);
 };
 
 export const updateResident = async (r: any) => {
-  // Ambil data lama untuk perbandingan
-  const { data: oldData } = await supabase.from('residents').select('*').eq('id', r.id).single();
-  
-  let changeDescription = 'Data warga diperbarui';
-  const changes = [];
-  
-  if (oldData) {
-    if (oldData.full_name !== r.fullName) {
-      changes.push(`nama: ${oldData.full_name} → ${r.fullName}`);
-    }
-    if (oldData.block_number !== r.blockNumber) {
-      changes.push(`blok: ${oldData.block_number} → ${r.blockNumber}`);
-    }
-    if (oldData.whatsapp !== r.whatsapp) {
-      changes.push(`whatsapp: ${oldData.whatsapp || '-'} → ${r.whatsapp || '-'}`);
-    }
-    if (oldData.occupancy_status !== r.occupancyStatus) {
-      changes.push(`status: ${oldData.occupancy_status} → ${r.occupancyStatus}`);
-    }
-    if (oldData.event_dues_amount !== Number(r.eventDuesAmount)) {
-      changes.push(`sukarela: Rp ${oldData.event_dues_amount || 0} → Rp ${r.eventDuesAmount || 0}`);
-    }
-    if (oldData.notes !== r.notes) {
-      changes.push('catatan diperbarui');
-    }
-  }
-  
-  if (changes.length > 0) {
-    changeDescription = changes.join(', ');
-  }
-  
-  // Simpan deskripsi perubahan di notes field dengan format yang jelas
-  const originalNotes = r.notes || '';
-  const updateTag = `[UPDATE: ${changeDescription}]`;
-  const updatedNotes = originalNotes.includes('[UPDATE:') 
-    ? originalNotes.replace(/\[UPDATE: .+\]/, updateTag)
-    : originalNotes ? `${originalNotes}\n${updateTag}` : updateTag;
-  
   await supabase.from('residents').update({
-    full_name: r.fullName, 
-    block_number: r.blockNumber, 
-    whatsapp: r.whatsapp,
-    occupancy_status: r.occupancyStatus, 
-    event_dues_amount: Number(r.eventDuesAmount),
-    notes: updatedNotes,
-    updated_at: Date.now()
+    full_name: r.fullName, block_number: r.blockNumber, whatsapp: r.whatsapp,
+    occupancy_status: r.occupancyStatus, event_dues_amount: Number(r.eventDuesAmount),
+    notes: r.notes
   }).eq('id', r.id);
 };
 
@@ -108,10 +62,6 @@ export const updateResidentPayment = async (id: string, isPaid: boolean, month: 
       .delete()
       .match({ resident_id: id, month: month, year: year });
   }
-  // Update resident's updated_at untuk tracking aktivitas pembayaran
-  await supabase.from('residents').update({
-    updated_at: Date.now()
-  }).eq('id', id);
 };
 
 export const deleteResident = async (id: string) => {
@@ -163,16 +113,6 @@ export const togglePayment = async (rid: string, m: number, y: number, status: b
   else await supabase.from('monthly_payments').delete().match({ resident_id: rid, month: m, year: y });
 };
 
-export const createPayment = async (payment: any) => {
-  await supabase.from('monthly_payments').insert([{
-    resident_id: payment.residentId,
-    month: payment.month,
-    year: payment.year,
-    amount: payment.amount || 10000,
-    paid_at: payment.timestamp || Date.now()
-  }]);
-};
-
 export const fetchComments = async () => {
   const { data } = await supabase.from('comments').select('*').order('created_at', { ascending: false });
   return data || [];
@@ -188,64 +128,6 @@ export const analyzeFinancesWithAI = async (sum: string) => {
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
   const result = await model.generateContent(sum);
   return result.response.text();
-};
-
-// ==================== EKSPOR/IMPORT TAMBAHAN ====================
-export const exportDataToJSON = async () => {
-  const [residents, payments, expenses] = await Promise.all([
-    fetchResidents(),
-    fetchAllPayments(),
-    fetchExpenses()
-  ]);
-
-  return {
-    residents,
-    payments,
-    expenses,
-    exportDate: new Date().toISOString()
-  };
-};
-
-export const downloadExcelTemplate = () => {
-  const wb = XLSX.utils.book_new();
-
-  // Template Warga
-  const wsWarga = XLSX.utils.json_to_sheet([
-    {
-      'Nama Lengkap': 'Contoh: Ahmad Budi',
-      'Nomor Blok': 'Contoh: A1/01',
-      'WhatsApp': 'Contoh: 08123456789',
-      'Status Hunian': 'Menetap/Penyewa/Kunjungan/Ditempati 2026',
-      'Iuran Kas': 10000,
-      'Catatan': 'Opsional'
-    }
-  ]);
-  XLSX.utils.book_append_sheet(wb, wsWarga, 'Data Warga');
-
-  // Template Pembayaran
-  const wsPembayaran = XLSX.utils.json_to_sheet([
-    {
-      'Nama Warga': 'Contoh: Ahmad Budi',
-      'Bulan': 'Februari',
-      'Tahun': 2026,
-      'Jenis': 'Kas',
-      'Jumlah': 10000,
-      'Tanggal': '04/02/2026'
-    }
-  ]);
-  XLSX.utils.book_append_sheet(wb, wsPembayaran, 'Data Pembayaran');
-
-  // Template Pengeluaran
-  const wsPengeluaran = XLSX.utils.json_to_sheet([
-    {
-      'Keterangan': 'Contoh: Belanja ATK',
-      'Jumlah': 50000,
-      'Tanggal': '04/02/2026'
-    }
-  ]);
-  XLSX.utils.book_append_sheet(wb, wsPengeluaran, 'Data Pengeluaran');
-
-  XLSX.writeFile(wb, `Template_Data_Paguyuban_Beryl_${new Date().toISOString().split('T')[0]}.xlsx`);
 };
 
 // ==================== EKSPOR EXCEL ====================
