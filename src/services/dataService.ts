@@ -62,6 +62,10 @@ export const updateResidentPayment = async (id: string, isPaid: boolean, month: 
       .delete()
       .match({ resident_id: id, month: month, year: year });
   }
+  // Update resident's updated_at untuk tracking aktivitas pembayaran
+  await supabase.from('residents').update({
+    updated_at: Date.now()
+  }).eq('id', id);
 };
 
 export const deleteResident = async (id: string) => {

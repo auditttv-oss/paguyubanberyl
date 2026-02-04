@@ -380,56 +380,64 @@ export const Residents = () => {
           </div>
         </div>
 
-        {/* Top Contributors Card */}
+        {/* 10 Data Warga Terbaru Card */}
         <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-6 rounded-2xl shadow-lg text-white">
           <div className="flex items-center justify-between mb-4">
             <div className="p-3 bg-white/20 rounded-xl">
-              <Activity className="w-6 h-6" />
+              <Clock className="w-6 h-6" />
             </div>
             <div className="text-right">
-              <p className="text-lg font-bold">Top Contributors</p>
-              <p className="text-amber-100 text-sm">Donatur & Pembayar Terbanyak</p>
+              <p className="text-lg font-bold">10 Data Terbaru</p>
+              <p className="text-amber-100 text-sm">Aktivitas CRUD Terkini</p>
             </div>
           </div>
           <div className="space-y-3">
-            {/* Top 3 Donatur Acara */}
+            {/* 10 Data Warga Terbaru berdasarkan updatedAt */}
             <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-xs font-bold mb-2 text-amber-100">🏆 Top 3 Donatur Acara</p>
+              <p className="text-xs font-bold mb-2 text-amber-100">📝 Update Terakhir</p>
               {residents
-                .filter(r => (r.eventDuesAmount || 0) > 0)
-                .sort((a, b) => (b.eventDuesAmount || 0) - (a.eventDuesAmount || 0))
-                .slice(0, 3)
-                .map((resident, index) => (
-                  <div key={resident.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">{index + 1}.</span>
-                      <span className="text-xs">{resident.fullName}</span>
+                .filter(r => r.updatedAt)
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .slice(0, 10)
+                .map((resident, index) => {
+                  const updateTime = new Date(resident.updatedAt);
+                  const now = new Date();
+                  const diffHours = Math.floor((now.getTime() - updateTime.getTime()) / (1000 * 60 * 60));
+                  const diffDays = Math.floor(diffHours / 24);
+                  
+                  let timeText = '';
+                  if (diffHours < 1) {
+                    timeText = 'Baru saja';
+                  } else if (diffHours < 24) {
+                    timeText = `${diffHours} jam lalu`;
+                  } else if (diffDays === 1) {
+                    timeText = 'Kemarin';
+                  } else if (diffDays < 7) {
+                    timeText = `${diffDays} hari lalu`;
+                  } else {
+                    timeText = updateTime.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
+                  }
+                  
+                  return (
+                    <div key={resident.id} className="flex items-center justify-between py-1 border-b border-white/10 last:border-0">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-xs font-bold text-amber-200">{index + 1}.</span>
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs truncate block">{resident.fullName}</span>
+                          <span className="text-xs text-amber-200">{resident.blockNumber}</span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xs font-bold">{timeText}</span>
+                      </div>
                     </div>
-                    <span className="text-xs font-bold">Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}</span>
-                  </div>
-                ))}
-            </div>
-            
-            {/* Top 3 Pembayar Kas Terbanyak */}
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-xs font-bold mb-2 text-amber-100">💰 Top 3 Pembayar Kas Terbanyak</p>
-              {residentPaymentStats
-                .filter(r => r.totalPaidMonths > 0)
-                .sort((a, b) => (b.totalPaidMonths || 0) - (a.totalPaidMonths || 0))
-                .slice(0, 3)
-                .map((resident, index) => (
-                  <div key={resident.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">{index + 1}.</span>
-                      <span className="text-xs">{resident.fullName}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold">
-                        {resident.totalPaidMonths || 0} bulan
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
+              {residents.filter(r => r.updatedAt).length === 0 && (
+                <p className="text-center text-amber-100 text-xs py-2">
+                  Belum ada data yang diupdate
+                </p>
+              )}
             </div>
           </div>
         </div>
