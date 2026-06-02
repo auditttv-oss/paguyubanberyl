@@ -1,59 +1,75 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { fetchResidentsWithStatus, updateResident, createResident, updateResidentPayment, deleteResident, fetchAllPayments } from '../services/dataService';
+import { 
+  fetchResidentsWithStatus, 
+  updateResident, 
+  createResident, 
+  updateResidentPayment, 
+  deleteResident, 
+  fetchAllPayments,
+  deserializeExtendedFields,
+  formatToLocalIdDate
+} from '../services/dataService';
 import { 
   Users, 
   Search, 
-  Filter, 
   ChevronDown, 
   UserPlus, 
-  Phone, 
   MessageCircle,
   Edit,
   Trash2,
   Loader2,
-  Home,
-  DollarSign,
-  TrendingUp,
-  Activity,
-  Target,
-  Clock,
   Calendar,
-  PieChart,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown
+  FileSpreadsheet,
+  Check,
+  X,
+  FileText,
+  Download,
+  Home,
+  Shield,
+  Car,
+  ChevronUp,
+  UserCheck
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-// PERBAIKAN: Ganti import default dengan named import
 import { ResidentModal } from '../components/ResidentModal';
 import { Resident } from '../types';
-import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
 import toast from 'react-hot-toast';
+import * as XLSX from 'xlsx';
 
+const MONTH_NAMES = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+];
 
 export const Residents = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  
-  // --- LOGIKA HAK AKSES ---
-  // Admin: CRUD Full. Non-Admin (Tamu/Warga Biasa): Read Only.
-  const isAdmin = user?.role === 'admin';
 
+  const userEmail = user?.email || '';
+  const isKetua = userEmail.includes('ketua');
+  const isBendahara = userEmail.includes('bendahara') || (!isKetua && !!user); 
+  const isAdmin = !!user;
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState<'manage' | 'rekap' | 'advanced_profile'>('manage');
+
+  // State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [advancedSearch, setAdvancedSearch] = useState(''); 
   const [filterStatus, setFilterStatus] = useState('all');
   const [sortBy, setSortBy] = useState('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const [showMobileFilters, setShowMobileFilters] = useState(false);
-  const [showNotes, setShowNotes] = useState<{ [key: string]: boolean }>({});
-  const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [selectedResidentForPayment, setSelectedResidentForPayment] = useState<Resident | null>(null);
+  
+  // State untuk melacak baris keluarga yang sedang diekspansi
+  const [expandedRows, setExpandedRows] = useState<{ [key: string]: boolean }>({});
+
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  
-  // Data fetching dengan periode dinamis
+
+  // Data fetching
   const { 
     data: residents = [], 
     isLoading, 
@@ -63,25 +79,21 @@ export const Residents = () => {
     queryFn: () => fetchResidentsWithStatus(selectedMonth, selectedYear),
   });
 
-  // Fetch all payments data
-  const { 
-    data: payments = [], 
-  } = useQuery({
+  const { data: allPayments = [] } = useQuery({
     queryKey: ['allPayments'],
     queryFn: fetchAllPayments,
   });
 
-  // Mutations
+  // Toggle payment directly from tables
   const paymentMutation = useMutation({
     mutationFn: ({ id, isPaid, month, year }: { id: string; isPaid: boolean; month: number; year: number }) =>
       updateResidentPayment(id, isPaid, month, year),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
       queryClient.invalidateQueries({ queryKey: ['allPayments'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      toast.success('Status pembayaran diperbarui');
+      toast.success('Status kas bulanan diperbarui');
     },
-    onError: () => toast.error('Gagal memperbarui pembayaran')
+    onError: () => toast.error('Gagal memperbarui kas bulanan')
   });
 
   const deleteMutation = useMutation({
@@ -89,51 +101,19 @@ export const Residents = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['residents'] });
       queryClient.invalidateQueries({ queryKey: ['allPayments'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      toast.success('Data warga dihapus');
+      toast.success('Data warga berhasil dihapus');
     },
     onError: () => toast.error('Gagal menghapus warga')
   });
 
-  const createMutation = useMutation({
-    mutationFn: createResident,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['residents'] });
-      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      setIsModalOpen(false);
-      setSelectedResident(null);
-      toast.success('Warga berhasil ditambahkan');
-    },
-    onError: () => toast.error('Gagal menambah warga')
-  });
-
-  const editMutation = useMutation({
-    mutationFn: updateResident,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['residents'] });
-      queryClient.invalidateQueries({ queryKey: ['allPayments'] });
-      queryClient.invalidateQueries({ queryKey: ['payments'] });
-      setIsModalOpen(false);
-      setSelectedResident(null);
-      toast.success('Data warga diperbarui');
-    },
-    onError: () => toast.error('Gagal memperbarui warga')
-  });
-
-  // Statistics logic remains the same
+  // Calculate stats
   const stats = useMemo(() => {
     const total = residents.length;
-    const occupied = residents.filter(r => 
-      r.occupancyStatus === 'Menetap' || 
-      r.occupancyStatus === 'Penyewa' || 
-      r.occupancyStatus === 'Ditempati 2026'
-    ).length;
+    const occupied = residents.filter(r => r.occupancyStatus === 'Menetap' || r.occupancyStatus === 'Penyewa').length;
     const paidKas = residents.filter(r => r.isPaidCurrentMonth).length;
     const paidSukarela = residents.filter(r => (r.eventDuesAmount || 0) > 0).length;
     const totalKas = paidKas * 10000;
     const totalSukarela = residents.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0);
-    const avgSukarela = paidSukarela > 0 ? Math.round(totalSukarela / paidSukarela) : 0;
 
     return {
       total,
@@ -143,21 +123,10 @@ export const Residents = () => {
       paidSukarela,
       totalKas,
       totalSukarela,
-      avgSukarela,
       paymentRate: total > 0 ? Math.round((paidKas / total) * 100) : 0,
       sukarelaRate: total > 0 ? Math.round((paidSukarela / total) * 100) : 0,
     };
   }, [residents]);
-
-  const residentPaymentStats = useMemo(() => {
-    return residents.map(resident => {
-      const paidMonths = payments?.filter(p => p.resident_id === resident.id).length || 0;
-      return {
-        ...resident,
-        totalPaidMonths: paidMonths
-      };
-    });
-  }, [residents, payments]);
 
   const processedResidents = useMemo(() => {
     let filtered = residents;
@@ -201,12 +170,39 @@ export const Residents = () => {
     return filtered;
   }, [residents, searchTerm, filterStatus, sortBy, sortOrder]);
 
-  const getWaLink = (phone: string) => {
-    const clean = phone.replace(/\D/g, '');
-    if (clean.startsWith('0')) {
-      return `https://wa.me/62${clean.substring(1)}`;
-    }
-    return `https://wa.me/${clean}`;
+  // Algoritme Pencarian Terintegrasi (Memindai Kepala Keluarga sekaligus seluruh Anggota Keluarga Serumah)
+  const filteredAdvancedResidents = useMemo(() => {
+    if (!advancedSearch.trim()) return processedResidents;
+    return processedResidents.filter(r => {
+      // Meneruskan variabel otentikasi !!user agar sensor keamanan berjalan sinkron saat pencarian data diinisiasi
+      const { fields, rawNotes } = deserializeExtendedFields(r.notes, !!user);
+      
+      const familyNames = (fields as any).family_members_list?.map((f: any) => f.name).join(' ') || '';
+
+      const textToSearch = [
+        r.fullName,
+        r.blockNumber,
+        fields.id_rumah || '',
+        fields.jenis_kelamin || '',
+        fields.pekerjaan || '',
+        fields.status_warga || '',
+        fields.nama_pemilik_asli || '',
+        fields.jenis_kendaraan || '',
+        fields.plat_nomor || '',
+        fields.keterangan_warna_merk || '',
+        familyNames,
+        rawNotes || ''
+      ].join(' ').toLowerCase();
+
+      return textToSearch.includes(advancedSearch.toLowerCase());
+    });
+  }, [processedResidents, advancedSearch, user]);
+
+  const toggleRowExpansion = (id: string) => {
+    setExpandedRows(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
   };
 
   const handleSort = (field: string) => {
@@ -218,834 +214,636 @@ export const Residents = () => {
     }
   };
 
-  const handlePaymentClick = (resident: Resident) => {
-    if (!isAdmin) return; // Proteksi: Hanya admin yang boleh edit pembayaran
-    setSelectedResidentForPayment(resident);
-    setShowPaymentModal(true);
-  };
-
-  const handlePaymentConfirm = (isPaid: boolean) => {
-    if (selectedResidentForPayment && isAdmin) {
-      paymentMutation.mutate({
-        id: selectedResidentForPayment.id,
-        isPaid,
-        month: selectedMonth,
-        year: selectedYear
-      });
-      setShowPaymentModal(false);
-      setSelectedResidentForPayment(null);
+  const getWaLink = (phone: string) => {
+    const clean = phone.replace(/\D/g, '');
+    if (clean.startsWith('0')) {
+      return `https://wa.me/62${clean.substring(1)}`;
     }
+    return `https://wa.me/${clean}`;
   };
 
-  // Loading state
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <Loader2 className="animate-spin mx-auto text-emerald-600 mb-4" size={40} />
-          <p className="text-gray-600">Memuat data warga...</p>
-        </div>
-      </div>
-    );
-  }
+  const checkPaymentStatus = (residentId: string, monthNum: number) => {
+    return allPayments.some(p => p.resident_id === residentId && p.month === monthNum && p.year === selectedYear);
+  };
+
+  const handleCellClick = (residentId: string, monthNum: number) => {
+    if (!isAdmin) return;
+    if (!isBendahara) {
+      toast.error('❌ Hak Akses Terbatas: Hanya Bendahara yang diizinkan mengedit kas.');
+      return;
+    }
+    const isPaid = checkPaymentStatus(residentId, monthNum);
+    paymentMutation.mutate({
+      id: residentId,
+      isPaid: !isPaid,
+      month: monthNum,
+      year: selectedYear
+    });
+  };
+
+  const handleExportRekapToExcel = () => {
+    const rekapData = processedResidents.map((r, index) => {
+      const row: any = {
+        'No.': index + 1,
+        'Nama Lengkap': r.fullName,
+        'Blok / No Rumah': r.blockNumber,
+        'Status Hunian': r.occupancyStatus
+      };
+
+      let paidCount = 0;
+      for (let m = 1; m <= 12; m++) {
+        const isPaid = checkPaymentStatus(r.id, m);
+        row[MONTH_NAMES[m-1].substring(0, 3)] = isPaid ? 'LUNAS (10K)' : 'BELUM';
+        if (isPaid) paidCount++;
+      }
+
+      row['Total Kas Terbayar'] = `Rp ${(paidCount * 10000).toLocaleString('id-ID')}`;
+      row['Status Bayar'] = `${paidCount}/12`;
+      return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(rekapData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Rekap Kas ${selectedYear}`);
+    XLSX.writeFile(workbook, `Rekap_Kas_Warga_Beryl_${selectedYear}.xlsx`);
+    toast.success('Excel Berhasil didownload!');
+  };
+
+  const handleExportKependudukanToExcel = () => {
+    const listData = filteredAdvancedResidents.map((r, index) => {
+      const { fields, rawNotes } = deserializeExtendedFields(r.notes, !!user);
+      return {
+        'No.': index + 1,
+        'Nama Lengkap': r.fullName,
+        'ID Rumah': fields.id_rumah || r.blockNumber,
+        'Blok / No Rumah': r.blockNumber,
+        'WhatsApp': r.whatsapp,
+        'Jenis Kelamin': fields.jenis_kelamin || 'Laki-Laki',
+        'Peran Keluarga': fields.peran_keluarga || 'Kepala Keluarga',
+        'Tempat, Tgl Lahir': fields.tempat_tgl_lahir || '',
+        'Agama': fields.agama || 'Islam',
+        'Gol. Darah': fields.golongan_darah || 'O',
+        'Pekerjaan': fields.pekerjaan || '',
+        'Status Warga': fields.status_warga || 'Tetap',
+        'Tanggal Bergabung': fields.tanggal_bergabung ? formatToLocalIdDate(fields.tanggal_bergabung) : '',
+        'Pemilik Asli': fields.nama_pemilik_asli || '',
+        'No. HP Pemilik': fields.no_hp_pemilik_asli || '',
+        'Status Hunian': r.occupancyStatus,
+        'Mulai Huni': fields.tgl_mulai_huni ? formatToLocalIdDate(fields.tgl_mulai_huni) : '',
+        'Jenis Kendaraan': fields.jenis_kendaraan || 'Tidak Ada',
+        'Plat Nomor': fields.plat_nomor || '',
+        'Warna / Merk': fields.keterangan_warna_merk || '',
+        'Catatan Tambahan': rawNotes
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(listData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Kependudukan');
+    XLSX.writeFile(workbook, `Data_Kependudukan_Lengkap_Beryl_${selectedYear}.xlsx`);
+    toast.success('File Kependudukan berhasil diunduh!');
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-6 pb-24">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6 pb-24 font-sans">
+      
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">Data Warga</h1>
-        <p className="text-gray-600">Total {stats.total} kepala keluarga</p>
-      </div>
-
-      {/* --- INFOGRAFIS (Tampil untuk Semua User) --- */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-6">
-        {/* Combined Stats Card */}
-        <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 rounded-xl">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-bold">{stats.total}</p>
-              <p className="text-blue-100 text-sm">Total KK</p>
-            </div>
-          </div>
-          <div className="bg-white/10 rounded-lg p-3">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Occupancy Rate</span>
-              <span className="font-bold">{stats.occupancyRate}%</span>
-            </div>
-            <div className="w-full bg-white/20 rounded-full h-2 mt-2">
-              <div 
-                className="bg-white rounded-full h-2 transition-all duration-500"
-                style={{ width: `${stats.occupancyRate}%` }}
-              />
-            </div>
-          </div>
-          <div className="bg-white/10 rounded-lg p-3 mt-3">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Total Dana</span>
-              <span className="font-bold">Rp {(stats.totalKas + stats.totalSukarela).toLocaleString('id-ID')}</span>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-2">
-              <div>
-                <p className="text-xs text-blue-100 mb-1">Iuran Wajib</p>
-                <p className="font-bold text-sm">Rp {stats.totalKas.toLocaleString('id-ID')}</p>
-              </div>
-              <div>
-                <p className="text-xs text-blue-100 mb-1">Sukarela</p>
-                <p className="font-bold text-sm">Rp {stats.totalSukarela.toLocaleString('id-ID')}</p>
-              </div>
-            </div>
-          </div>
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-black text-gray-800">Manajemen Data Warga</h1>
+          <p className="text-gray-500 text-sm">Cluster Beryl - Total {stats.total} Kepala Keluarga</p>
         </div>
-
-        {/* Payment Rate Card */}
-        <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-2xl shadow-lg text-white mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 rounded-xl">
-              <Target className="w-6 h-6" />
-            </div>
-            <div className="text-right">
-              <p className="text-3xl font-bold">{stats.paymentRate}%</p>
-              <p className="text-purple-100 text-sm">Tingkat Bayar Kas</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="bg-white/10 rounded-lg p-3">
-              <div className="flex justify-between text-sm mb-1">
-                <span>Kas: {stats.paidKas}/{stats.total}</span>
-                <span className="font-bold">{stats.paymentRate}%</span>
-              </div>
-              <div className="w-full bg-white/20 rounded-full h-2">
-                <div 
-                  className="bg-white rounded-full h-2 transition-all duration-500"
-                  style={{ width: `${stats.paymentRate}%` }}
-                />
-              </div>
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <div className="flex justify-between text-sm mb-1">
-                <span>Sukarela: {stats.paidSukarela}/{stats.total}</span>
-                <span className="font-bold">{stats.sukarelaRate}%</span>
-              </div>
-              <div className="w-full bg-white/20 rounded-full h-2">
-                <div 
-                  className="bg-blue-300 rounded-full h-2 transition-all duration-500"
-                  style={{ width: `${stats.sukarelaRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Top Contributors Card */}
-        <div className="bg-gradient-to-br from-amber-500 to-amber-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 rounded-xl">
-              <Activity className="w-6 h-6" />
-            </div>
-            <div className="text-right">
-              <p className="text-lg font-bold">Top Contributors</p>
-              <p className="text-amber-100 text-sm">Donatur & Pembayar Terbanyak</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-xs font-bold mb-2 text-amber-100">🏆 Top 3 Donatur Acara</p>
-              {residents
-                .filter(r => (r.eventDuesAmount || 0) > 0)
-                .sort((a, b) => (b.eventDuesAmount || 0) - (a.eventDuesAmount || 0))
-                .slice(0, 3)
-                .map((resident, index) => (
-                  <div key={resident.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">{index + 1}.</span>
-                      <span className="text-xs">{resident.fullName}</span>
-                    </div>
-                    <span className="text-xs font-bold">Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}</span>
-                  </div>
-                ))}
-            </div>
-            <div className="bg-white/10 rounded-lg p-3">
-              <p className="text-xs font-bold mb-2 text-amber-100">💰 Top 3 Pembayar Kas Terbanyak</p>
-              {residentPaymentStats
-                .filter(r => r.totalPaidMonths > 0)
-                .sort((a, b) => (b.totalPaidMonths || 0) - (a.totalPaidMonths || 0))
-                .slice(0, 3)
-                .map((resident, index) => (
-                  <div key={resident.id} className="flex items-center justify-between py-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold">{index + 1}.</span>
-                      <span className="text-xs">{resident.fullName}</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-bold">
-                        {resident.totalPaidMonths || 0} bulan
-                      </span>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick Search Card (MODIFIED FOR GUEST MODE) */}
-        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 p-6 rounded-2xl shadow-lg text-white">
-          <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-white/20 rounded-xl">
-              <Search className="w-6 h-6" />
-            </div>
-            <div className="text-right">
-              <p className="text-lg font-bold">Quick Search</p>
-              <p className="text-indigo-100 text-sm">{isAdmin ? "Pencarian & Edit Warga" : "Pencarian Warga"}</p>
-            </div>
-          </div>
-          <div className="space-y-3">
-            <div className="bg-white/10 rounded-lg p-3">
-              <input
-                type="text"
-                placeholder="Cari nama, blok, atau catatan..."
-                className="w-full bg-white/20 border border-white/30 rounded-lg px-3 py-2 text-sm text-white placeholder-white/70 focus:outline-none focus:border-white/50 focus:bg-white/30"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            <div className="bg-white/10 rounded-lg p-3 max-h-64 overflow-y-auto">
-              <p className="text-xs font-bold mb-2 text-indigo-100">📋 Hasil Pencarian</p>
-              {processedResidents.slice(0, 5).map((resident) => (
-                <div key={resident.id} className="bg-white/20 rounded-lg p-2 mb-2 last:mb-0">
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                      <span className="font-semibold">Nama:</span>
-                      <span className="ml-1">{resident.fullName}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Blok:</span>
-                      <span className="ml-1">{resident.blockNumber}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Status:</span>
-                      <span className="ml-1">{resident.occupancyStatus}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Kontak:</span>
-                      {/* Kontak hanya ditampilkan jika user login (terserah role) */}
-                      <span className="ml-1">{user ? (resident.whatsapp || '-') : 'Tersembunyi'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Kas:</span>
-                      <span className="ml-1">{resident.isPaidCurrentMonth ? '✅' : '❌'}</span>
-                    </div>
-                    <div>
-                      <span className="font-semibold">Sukarela:</span>
-                      <span className="ml-1">Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="font-semibold">Catatan:</span>
-                      <span className="ml-1">{resident.notes || '-'}</span>
-                    </div>
-                    
-                    {/* TOMBOL AKSI DI QUICK SEARCH - HANYA ADMIN */}
-                    {isAdmin && (
-                      <div className="col-span-2 flex gap-1 mt-1">
-                        <button
-                          onClick={() => {
-                            setSelectedResident(resident);
-                            setIsModalOpen(true);
-                          }}
-                          className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
-                        >
-                          ✏️ Edit
-                        </button>
-                        <button
-                          onClick={() => handlePaymentClick(resident)}
-                          className="bg-white/30 hover:bg-white/40 rounded px-2 py-1 text-xs transition-colors"
-                        >
-                          💰 Kas
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Hapus ${resident.fullName}?`)) {
-                              deleteMutation.mutate(resident.id);
-                            }
-                          }}
-                          className="bg-red-500/30 hover:bg-red-500/40 rounded px-2 py-1 text-xs transition-colors"
-                        >
-                          🗑️ Hapus
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {processedResidents.length === 0 && (
-                <p className="text-center text-white/70 text-xs py-4">
-                  Tidak ada data warga yang ditemukan
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Period Selector */}
-      <div className="bg-white rounded-xl shadow-sm border p-4 mb-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <Calendar className="text-emerald-600" size={20} />
-            <div>
-              <h3 className="font-semibold text-gray-800">
-                Periode: {new Date(selectedYear, selectedMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-              </h3>
-              <p className="text-sm text-gray-600">Status pembayaran yang ditampilkan untuk periode ini.</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
-            >
-              {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-                <option key={m} value={m}>{new Date(2024, m-1, 1).toLocaleDateString('id-ID', {month:'long'})}</option>
-              ))}
-            </select>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
-            >
-              {[2024, 2025, 2026, 2027, 2028].map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Add Button */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Cari nama, blok, atau catatan..."
-            className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        {/* TOMBOL TAMBAH - HANYA ADMIN */}
+        
         {isAdmin && (
           <button
-            onClick={() => setIsModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-medium flex items-center justify-center gap-2"
+            onClick={() => { setSelectedResident(null); setIsModalOpen(true); }}
+            className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 text-sm"
           >
-            <UserPlus size={20} />
-            Tambah Warga
+            <UserPlus size={18} />
+            Tambah Warga Baru
           </button>
         )}
       </div>
 
-      {/* Filters for Mobile */}
-      <div className="md:hidden mb-4">
+      {/* Tabs Menu */}
+      <div className="flex flex-col sm:flex-row border-b mb-6 bg-white rounded-xl shadow-sm p-1.5 gap-1">
         <button
-          onClick={() => setShowMobileFilters(!showMobileFilters)}
-          className="w-full flex items-center justify-center gap-2 py-3 bg-white border rounded-lg"
+          onClick={() => setActiveTab('manage')}
+          className={`flex-1 py-3 font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'manage' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'
+          }`}
         >
-          <Filter size={20} />
-          <span>Filter & Urutkan</span>
-          <ChevronDown className={`transition-transform ${showMobileFilters ? 'rotate-180' : ''}`} size={16} />
+          <Users size={16} />
+          Daftar & Kelola Warga
         </button>
-        
-        {showMobileFilters && (
-          <div className="mt-3 p-4 bg-white border rounded-lg space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">Status Huni</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full border rounded-lg p-2"
-              >
-                <option value="all">Semua</option>
-                <option value="Menetap">Menetap</option>
-                <option value="Penyewa">Penyewa</option>
-                <option value="Kunjungan">Kunjungan</option>
-                <option value="Ditempati 2026">Ditempati 2026</option>
-              </select>
+        <button
+          onClick={() => setActiveTab('rekap')}
+          className={`flex-1 py-3 font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'rekap' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <FileSpreadsheet size={16} />
+          Laporan Rekap Bulanan (12 Bulan)
+        </button>
+        <button
+          onClick={() => setActiveTab('advanced_profile')}
+          className={`flex-1 py-3 font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-2 ${
+            activeTab === 'advanced_profile' ? 'bg-emerald-600 text-white shadow-md' : 'text-gray-400 hover:text-gray-600'
+          }`}
+        >
+          <FileText size={16} />
+          Profil Kependudukan Lengkap
+        </button>
+      </div>
+
+      {/* Statistics */}
+      {activeTab !== 'advanced_profile' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 rounded-2xl shadow-lg shadow-emerald-500/10">
+            <p className="text-xs font-bold uppercase opacity-85">Kepatuhan Kas Wajib</p>
+            <p className="text-3xl font-black mt-1">{stats.paymentRate}%</p>
+            <p className="text-xs opacity-75 mt-2">{stats.paidKas} dari {stats.total} KK Lunas Bulan Ini</p>
+          </div>
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 rounded-2xl shadow-lg shadow-blue-500/10">
+            <p className="text-xs font-bold uppercase opacity-85">Rasio Hunian Aktif</p>
+            <p className="text-3xl font-black mt-1">{stats.occupancyRate}%</p>
+            <p className="text-xs opacity-75 mt-2">{stats.occupied} dari {stats.total} Rumah Dihuni</p>
+          </div>
+          <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-5 rounded-2xl shadow-lg shadow-amber-500/10">
+            <p className="text-xs font-bold uppercase opacity-85">Kas Sukarela Terkumpul</p>
+            <p className="text-3xl font-black mt-1">Rp {stats.totalSukarela.toLocaleString('id-ID')}</p>
+            <p className="text-xs opacity-75 mt-2">Partisipasi Iuran Sukarela: {stats.paidSukarela} KK</p>
+          </div>
+        </div>
+      )}
+
+      {/* Period Selector (Rekap & Kas) */}
+      <div className="bg-white rounded-2xl border p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Calendar className="text-emerald-600" size={20} />
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">
+              Rekapitulasi Tahun: {selectedYear}
+            </h3>
+            <p className="text-xs text-gray-500">Pilih tahun untuk memonitor data pembayaran warga.</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <select
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            className="bg-white border rounded-xl px-3 py-2 text-sm font-semibold focus:ring-2 focus:ring-emerald-500 outline-none"
+          >
+            {[2024, 2025, 2026, 2027, 2028].map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+          {activeTab === 'rekap' && (
+            <button
+              onClick={handleExportRekapToExcel}
+              className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1.5"
+            >
+              <FileSpreadsheet size={14}/>
+              Ekspor Rekap Excel
+            </button>
+          )}
+          {activeTab === 'advanced_profile' && (
+            <button
+              onClick={handleExportKependudukanToExcel}
+              className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-xl font-bold text-xs flex items-center gap-1.5 animate-in fade-in"
+            >
+              <Download size={14}/>
+              Unduh Seluruh Data Kependudukan
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Tab 1: MANAGE RESIDENTS */}
+      {activeTab === 'manage' && (
+        <div className="space-y-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                type="text"
+                placeholder="Cari nama, blok, atau catatan..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-500 text-sm bg-white"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-            <div>
-              <label className="block text-sm font-medium mb-2">Urutkan</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="w-full border rounded-lg p-2"
-              >
-                <option value="name">Nama</option>
-                <option value="block">Blok</option>
-                <option value="status">Status</option>
-                <option value="payment">Status Pembayaran</option>
-                <option value="sukarela">Iuran Sukarela</option>
-              </select>
+            
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="border rounded-xl px-3 py-2.5 text-sm bg-white font-semibold outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="all">Semua Hunian</option>
+              <option value="Menetap">Menetap</option>
+              <option value="Penyewa">Penyewa</option>
+              <option value="Kunjungan">Kunjungan</option>
+              <option value="Ditempati 2026">Ditempati 2026</option>
+            </select>
+          </div>
+
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 text-gray-500 font-bold border-b text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="p-4">Blok</th>
+                    <th className="p-4">Nama Lengkap</th>
+                    <th className="p-4">Status Huni</th>
+                    <th className="p-4">Kontak (WA)</th>
+                    <th className="p-4">Kas Wajib (10K)</th>
+                    <th className="p-4">Kas Acara (Sukarela)</th>
+                    <th className="p-4">Catatan</th>
+                    {isAdmin && <th className="p-4 text-center">Aksi</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {processedResidents.map((resident) => (
+                    <tr key={resident.id} className="hover:bg-gray-50/50">
+                      <td className="p-4 font-bold text-gray-800">{resident.blockNumber}</td>
+                      <td className="p-4 font-bold text-gray-900">{resident.fullName}</td>
+                      <td className="p-4">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                          resident.occupancyStatus === 'Menetap' ? 'bg-emerald-100 text-emerald-800' :
+                          resident.occupancyStatus === 'Penyewa' ? 'bg-blue-100 text-blue-800' :
+                          resident.occupancyStatus === 'Kunjungan' ? 'bg-amber-100 text-amber-800' :
+                          'bg-purple-100 text-purple-800'
+                        }`}>
+                          {resident.occupancyStatus}
+                        </span>
+                      </td>
+                      <td className="p-4 text-gray-500">
+                        {user ? (
+                          <a 
+                            href={getWaLink(resident.whatsapp)} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 font-semibold"
+                          >
+                            <MessageCircle size={16}/> {resident.whatsapp}
+                          </a>
+                        ) : (
+                          <span className="text-gray-400 italic flex items-center gap-1">
+                            🔒 Tersembunyi (Mode Tamu)
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4">
+                        <button
+                          onClick={() => {
+                            if (!isAdmin) return;
+                            if (!isBendahara) {
+                              toast.error('❌ Hak Akses Terbatas: Hanya Bendahara yang diizinkan memproses Kas.');
+                              return;
+                            }
+                            paymentMutation.mutate({
+                              id: resident.id,
+                              isPaid: !resident.isPaidCurrentMonth,
+                              month: selectedMonth,
+                              year: selectedYear
+                            });
+                          }}
+                          disabled={!isAdmin}
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 ${
+                            resident.isPaidCurrentMonth ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {resident.isPaidCurrentMonth ? <Check size={14}/> : <X size={14}/>}
+                          {resident.isPaidCurrentMonth ? 'Lunas' : 'Belum'}
+                        </button>
+                      </td>
+                      <td className="p-4 font-black text-blue-600 text-xs">
+                        Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}
+                      </td>
+                      <td className="p-4 text-xs text-gray-500 italic truncate max-w-[150px]">
+                        {deserializeExtendedFields(resident.notes, !!user).rawNotes || '-'}
+                      </td>
+                      {isAdmin && (
+                        <td className="p-4 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => { setSelectedResident(resident); setIsModalOpen(true); }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                              title="Edit"
+                            >
+                              <Edit size={16}/>
+                            </button>
+                            <button
+                              onClick={() => {
+                                if (confirm(`Hapus data warga ${resident.fullName}?`)) {
+                                  deleteMutation.mutate(resident.id);
+                                }
+                              }}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Hapus"
+                            >
+                              <Trash2 size={16}/>
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
-        )}
-      </div>
-
-      {/* Desktop Filters */}
-      <div className="hidden md:flex items-center gap-4 mb-4">
-        <div>
-          <label className="text-sm font-medium mr-2">Status:</label>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            className="border rounded-lg p-2"
-          >
-            <option value="all">Semua</option>
-            <option value="Menetap">Menetap</option>
-            <option value="Penyewa">Penyewa</option>
-            <option value="Kunjungan">Kunjungan</option>
-            <option value="Ditempati 2026">Ditempati 2026</option>
-          </select>
         </div>
-        <div>
-          <label className="text-sm font-medium mr-2">Urutkan:</label>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
-            className="border rounded-lg p-2"
-          >
-            <option value="name">Nama</option>
-            <option value="block">Blok</option>
-            <option value="status">Status</option>
-            <option value="payment">Status Pembayaran</option>
-            <option value="sukarela">Iuran Sukarela</option>
-          </select>
-        </div>
-      </div>
+      )}
 
-      {/* Residents List/Table */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        {/* Desktop Table */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full min-w-[800px]">
-            <thead className="bg-gray-50">
-              <tr>
-                <th 
-                  onClick={() => handleSort('name')}
-                  className="p-4 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Nama
-                    {sortBy === 'name' ? (
-                      sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                    ) : (
-                      <ArrowUpDown size={14} className="text-gray-400" />
-                    )}
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('block')}
-                  className="p-4 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Blok
-                    {sortBy === 'block' ? (
-                      sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                    ) : (
-                      <ArrowUpDown size={14} className="text-gray-400" />
-                    )}
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('status')}
-                  className="p-4 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Status
-                    {sortBy === 'status' ? (
-                      sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                    ) : (
-                      <ArrowUpDown size={14} className="text-gray-400" />
-                    )}
-                  </div>
-                </th>
-                <th className="p-4 text-left text-sm font-medium text-gray-700">Kontak</th>
-                <th 
-                  onClick={() => handleSort('payment')}
-                  className="p-4 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Kas 10rb
-                    {sortBy === 'payment' ? (
-                      sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                    ) : (
-                      <ArrowUpDown size={14} className="text-gray-400" />
-                    )}
-                  </div>
-                </th>
-                <th 
-                  onClick={() => handleSort('sukarela')}
-                  className="p-4 text-left text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors"
-                >
-                  <div className="flex items-center gap-1">
-                    Sukarela
-                    {sortBy === 'sukarela' ? (
-                      sortOrder === 'asc' ? <ArrowUp size={14} /> : <ArrowDown size={14} />
-                    ) : (
-                      <ArrowUpDown size={14} className="text-gray-400" />
-                    )}
-                  </div>
-                </th>
-                <th className="p-4 text-left text-sm font-medium text-gray-700">Catatan</th>
-                {/* HEADER AKSI - HANYA ADMIN */}
-                {isAdmin && <th className="p-4 text-left text-sm font-medium text-gray-700">Aksi</th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {processedResidents.map((resident) => (
-                <tr key={resident.id} className="hover:bg-gray-50">
-                  <td className="p-4">
-                    <p className="font-medium text-gray-800">{resident.fullName}</p>
-                  </td>
-                  <td className="p-4">
-                    <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                      {resident.blockNumber}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                      resident.occupancyStatus === 'Menetap' 
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : resident.occupancyStatus === 'Penyewa'
-                        ? 'bg-blue-100 text-blue-800'
-                        : resident.occupancyStatus === 'Kunjungan'
-                        ? 'bg-amber-100 text-amber-800'
-                        : 'bg-purple-100 text-purple-800'
-                    }`}>
-                      {resident.occupancyStatus}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <div className="flex items-center gap-2">
-                      {user ? (
-                        <>
-                          <a
-                            href={getWaLink(resident.whatsapp)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-green-600 hover:text-green-700"
-                          >
-                            <MessageCircle size={16} />
-                          </a>
-                          <span className="text-sm text-gray-600">{resident.whatsapp}</span>
-                        </>
-                      ) : (
-                        <span className="text-sm text-gray-400">
-                          <MessageCircle size={16} className="inline mr-1" />
-                          Tersembunyi
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  {/* KOLOM KAS */}
-                  <td className="p-4">
-                    {isAdmin ? (
-                      <button
-                        onClick={() => handlePaymentClick(resident)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                          resident.isPaidCurrentMonth
-                            ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-                            : 'bg-red-100 text-red-800 hover:bg-red-200'
-                        }`}
-                      >
-                        {resident.isPaidCurrentMonth ? 'Sudah' : 'Belum'}
-                      </button>
-                    ) : (
-                      // Tampilan Read-Only untuk Tamu
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        resident.isPaidCurrentMonth
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {resident.isPaidCurrentMonth ? 'Sudah' : 'Belum'}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-4">
-                    <span className="text-sm font-medium text-blue-600">
-                      Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <button
-                      onClick={() => setShowNotes(prev => ({ ...prev, [resident.id]: !prev[resident.id] }))}
-                      className="text-gray-600 hover:text-gray-800"
-                    >
-                      {showNotes[resident.id] ? (
-                        <div className="max-w-xs">
-                          <p className="text-sm text-gray-600">{resident.notes || '-'}</p>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-gray-500">
-                          {resident.notes ? resident.notes.substring(0, 30) + '...' : '-'}
-                        </span>
-                      )}
-                    </button>
-                  </td>
-                  
-                  {/* KOLOM AKSI - HANYA ADMIN */}
-                  {isAdmin && (
-                    <td className="p-4">
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedResident(resident);
-                            setIsModalOpen(true);
-                          }}
-                          className="text-blue-600 hover:text-blue-700"
-                        >
-                          <Edit size={16} />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (window.confirm(`Hapus ${resident.fullName}?`)) {
-                              deleteMutation.mutate(resident.id);
-                            }
-                          }}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile Cards */}
-        <div className="md:hidden">
-          {processedResidents.map((resident) => (
-            <div key={resident.id} className="p-4 border-b">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <p className="font-medium text-gray-800">{resident.fullName}</p>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    resident.occupancyStatus === 'Menetap' 
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : resident.occupancyStatus === 'Penyewa'
-                      ? 'bg-blue-100 text-blue-800'
-                      : resident.occupancyStatus === 'Kunjungan'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-purple-100 text-purple-800'
-                  }`}>
-                    {resident.occupancyStatus}
-                  </span>
-                </div>
-                <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-sm">
-                  {resident.blockNumber}
-                </span>
-              </div>
-              
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  {user ? (
-                    <>
-                      <a
-                        href={getWaLink(resident.whatsapp)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-green-600 hover:text-green-700"
-                      >
-                        <MessageCircle size={16} />
-                      </a>
-                      <span className="text-gray-600">{resident.whatsapp}</span>
-                    </>
-                  ) : (
-                    <span className="text-gray-400">
-                      <MessageCircle size={16} className="inline mr-1" />
-                      Tersembunyi
-                    </span>
-                  )}
-                </div>
-                
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Kas:</span>
-                  {isAdmin ? (
-                    <button
-                      onClick={() => handlePaymentClick(resident)}
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        resident.isPaidCurrentMonth
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}
-                    >
-                      {resident.isPaidCurrentMonth ? 'Sudah' : 'Belum'}
-                    </button>
-                  ) : (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      resident.isPaidCurrentMonth
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-red-100 text-red-800'
-                    }`}>
-                      {resident.isPaidCurrentMonth ? 'Sudah' : 'Belum'}
-                    </span>
-                  )}
-                </div>
-                
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Sukarela:</span>
-                  <span className="font-medium text-blue-600">
-                    Rp {(resident.eventDuesAmount || 0).toLocaleString('id-ID')}
-                  </span>
-                </div>
-                
-                {resident.notes && (
-                  <div>
-                    <span className="text-gray-600">Catatan:</span>
-                    <p className="text-xs text-gray-500 mt-1">{resident.notes}</p>
-                  </div>
-                )}
-              </div>
-              
-              {/* MOBILE ACTIONS - HANYA ADMIN */}
-              {isAdmin && (
-                <div className="flex justify-end gap-2 mt-3">
-                  <button
-                    onClick={() => {
-                      setSelectedResident(resident);
-                      setIsModalOpen(true);
-                    }}
-                    className="text-blue-600 hover:text-blue-700"
-                  >
-                    <Edit size={16} />
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (window.confirm(`Hapus ${resident.fullName}?`)) {
-                        deleteMutation.mutate(resident.id);
-                      }
-                    }}
-                    className="text-red-600 hover:text-red-700"
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              )}
+      {/* Tab 2: REKAP BULANAN (12 MONTHS) */}
+      {activeTab === 'rekap' && (
+        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+          <div className="p-4 bg-gray-50 border-b flex flex-col md:flex-row justify-between md:items-center gap-2">
+            <div>
+              <p className="font-bold text-gray-800 text-sm">Rekapitulasi Setoran Kas Wajib (Rp 10.000/Bulan)</p>
+              <p className="text-xs text-gray-500">
+                {isAdmin ? 'Klik pada sel iuran bulanan untuk mengubah status pembayaran.' : 'Laporan iuran warga berjalan.'}
+              </p>
             </div>
-          ))}
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1 text-xs text-emerald-700 font-bold"><Check size={14}/> Lunas</span>
+              <span className="flex items-center gap-1 text-xs text-red-500 font-bold"><X size={14}/> Belum</span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+              <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px]">
+                <tr>
+                  <th className="p-3 border-r">No.</th>
+                  <th className="p-3 border-r min-w-[150px]">Nama Warga</th>
+                  <th className="p-3 border-r">Blok</th>
+                  {MONTH_NAMES.map((m) => (
+                    <th key={m} className="p-2 border-r text-center">{m.substring(0, 3)}</th>
+                  ))}
+                  <th className="p-3 border-r text-center">Total</th>
+                  <th className="p-3 text-center">Status Bayar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {processedResidents.map((r, index) => {
+                  let payCount = 0;
+                  return (
+                    <tr key={r.id} className="hover:bg-gray-50/50">
+                      <td className="p-3 border-r text-gray-400 font-bold">{index + 1}</td>
+                      <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
+                      <td className="p-3 border-r font-black text-gray-700">{r.blockNumber}</td>
+                      
+                      {Array.from({ length: 12 }, (_, i) => {
+                        const monthNum = i + 1;
+                        const isPaid = checkPaymentStatus(r.id, monthNum);
+                        if (isPaid) payCount++;
+
+                        return (
+                          <td 
+                            key={monthNum} 
+                            onClick={() => handleCellClick(r.id, monthNum)}
+                            className={`p-2 border-r text-center transition-all ${
+                              isAdmin ? 'cursor-pointer hover:scale-110' : ''
+                            } ${isPaid ? 'bg-emerald-50/50' : 'bg-rose-50/20'}`}
+                          >
+                            <div className="flex items-center justify-center">
+                              {isPaid ? (
+                                <span className="bg-emerald-500 text-white rounded-full p-0.5" title="Lunas Rp 10.000">
+                                  <Check size={10} strokeWidth={4}/>
+                                </span>
+                              ) : (
+                                <span className="text-gray-300">
+                                  <X size={10} strokeWidth={2}/>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        );
+                      })}
+
+                      <td className="p-3 border-r text-center font-black text-emerald-600 bg-emerald-50/30">
+                        Rp {(payCount * 10000).toLocaleString('id-ID')}
+                      </td>
+                      
+                      <td className="p-3 text-center bg-gray-50/30">
+                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                          payCount === 12 ? 'bg-emerald-100 text-emerald-800' :
+                          payCount > 6 ? 'bg-blue-100 text-blue-800' :
+                          payCount > 0 ? 'bg-amber-100 text-amber-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {payCount}/12
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Footer */}
-      <div className="mt-6 text-center text-gray-500 text-sm">
-        <p>Total {processedResidents.length} warga dari {stats.total} total</p>
-      </div>
+      {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF */}
+      {activeTab === 'advanced_profile' && (
+        <div className="space-y-4 animate-in fade-in duration-300">
+          
+          {/* Bar Pencarian Kependudukan */}
+          <div className="bg-white p-4 rounded-2xl border shadow-sm flex flex-col sm:flex-row gap-3 items-center">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600" size={18} />
+              <input
+                type="text"
+                placeholder="Cari berdasarkan nama, id rumah, plat nomor, pemilik asli, atau nama anggota keluarga serumah..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-200 text-sm bg-white"
+                value={advancedSearch}
+                onChange={(e) => setAdvancedSearch(e.target.value)}
+              />
+            </div>
+            {advancedSearch && (
+              <button 
+                onClick={() => setAdvancedSearch('')}
+                className="text-xs font-bold text-gray-400 hover:text-gray-600 underline whitespace-nowrap"
+              >
+                Reset Pencarian
+              </button>
+            )}
+          </div>
 
-      {/* Modal CRUD - Selalu render jika open, tapi trigger pembukaannya di-limit di UI */}
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
+            <div className="p-4 bg-gray-50 border-b flex justify-between items-center flex-wrap gap-2">
+              <div>
+                <h3 className="font-bold text-gray-800 text-sm">Dashboard Informasi Identitas Warga (Lengkap)</h3>
+                <p className="text-xs text-gray-500">
+                  Hasil penyaringan: {filteredAdvancedResidents.length} KK. Klik ikon panah pada nama untuk melihat detail anggota keluarga serumah.
+                </p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse min-w-[1400px]">
+                <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px]">
+                  <tr>
+                    <th className="p-3 border-r w-[50px] text-center">Detail</th>
+                    <th className="p-3 border-r">Nama Lengkap</th>
+                    <th className="p-3 border-r">ID Rumah</th>
+                    <th className="p-3 border-r min-w-[200px]">Anggota Serumah</th> {/* BARU: KOLOM ANGGOTA SERUMAH LANGSUNG */}
+                    <th className="p-3 border-r">Jenis Kelamin</th>
+                    <th className="p-3 border-r">Peran</th>
+                    <th className="p-3 border-r">Tempat, Tgl Lahir</th>
+                    <th className="p-3 border-r">Agama</th>
+                    <th className="p-3 border-r">Darah</th>
+                    <th className="p-3 border-r">Pekerjaan</th>
+                    <th className="p-3 border-r">Status</th>
+                    <th className="p-3 border-r">Pemilik Asli</th>
+                    <th className="p-3 border-r">No. HP Pemilik</th>
+                    <th className="p-3 border-r">Mulai Huni</th>
+                    <th className="p-3 border-r">Kendaraan</th>
+                    <th className="p-3 border-r">Plat Nomor</th>
+                    <th className="p-3">Warna / Merk</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {filteredAdvancedResidents.map((r) => {
+                    // Proteksi Keamanan API: Mengirim !!user ke deseralisator
+                    const { fields } = deserializeExtendedFields(r.notes, !!user);
+                    const isExpanded = !!expandedRows[r.id];
+                    const familyList: any[] = (fields as any).family_members_list || [];
+
+                    return (
+                      <React.Fragment key={r.id}>
+                        {/* Baris Utama Kepala Keluarga */}
+                        <tr className={`hover:bg-gray-50/50 transition-colors ${isExpanded ? 'bg-emerald-50/10' : ''}`}>
+                          <td className="p-3 border-r text-center">
+                            {familyList.length > 0 ? (
+                              <button 
+                                onClick={() => toggleRowExpansion(r.id)}
+                                className="p-1 hover:bg-gray-200 rounded-lg text-emerald-700 transition-colors"
+                                title="Lihat Anggota Keluarga Serumah"
+                              >
+                                {isExpanded ? <ChevronUp size={16}/> : <ChevronDown size={16}/>}
+                              </button>
+                            ) : (
+                              <span className="text-gray-300 font-bold text-[10px]">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
+                          <td className="p-3 border-r font-black text-emerald-800">{fields.id_rumah || r.blockNumber}</td>
+                          
+                          {/* BARU: MENAMPILKAN DAFTAR ANGGOTA SERUMAH LANGSUNG BERUPA LENCANA KECIL */}
+                          <td className="p-3 border-r">
+                            {familyList.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {familyList.map((f: any, fidx: number) => (
+                                  <span 
+                                    key={fidx} 
+                                    className="bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded text-[10px] font-bold border border-emerald-100 whitespace-nowrap"
+                                    title={`${f.name} (${f.relation})`}
+                                  >
+                                    {f.relation}: {f.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic text-[10px]">Hanya KK</span>
+                            )}
+                          </td>
+
+                          <td className="p-3 border-r">{fields.jenis_kelamin || 'Laki-Laki'}</td>
+                          <td className="p-3 border-r font-semibold text-gray-600">{fields.peran_keluarga || 'Kepala Keluarga'}</td>
+                          <td className="p-3 border-r">{fields.tempat_tgl_lahir || '-'}</td>
+                          <td className="p-3 border-r">{fields.agama || 'Islam'}</td>
+                          <td className="p-3 border-r text-center font-bold text-rose-600">{fields.golongan_darah || 'O'}</td>
+                          <td className="p-3 border-r">{fields.pekerjaan || '-'}</td>
+                          <td className="p-3 border-r font-semibold text-blue-800">{fields.status_warga || 'Tetap'}</td>
+                          <td className="p-3 border-r">{fields.nama_pemilik_asli || '-'}</td>
+                          <td className="p-3 border-r text-gray-500">
+                            {user ? (fields.no_hp_pemilik_asli || '-') : '🔒 Terproteksi'}
+                          </td>
+                          <td className="p-3 border-r text-gray-500">
+                            {fields.tgl_mulai_huni ? formatToLocalIdDate(fields.tgl_mulai_huni) : '-'}
+                          </td>
+                          <td className="p-3 border-r font-bold text-indigo-700">{fields.jenis_kendaraan || 'Tidak Ada'}</td>
+                          <td className="p-3 border-r font-mono font-bold text-gray-800">{fields.plat_nomor || '-'}</td>
+                          <td className="p-3 text-gray-500">{fields.keterangan_warna_merk || '-'}</td>
+                        </tr>
+
+                        {/* Baris Ekspansi Detail Anggota Keluarga Serumah */}
+                        {isExpanded && familyList.length > 0 && (
+                          <tr className="bg-emerald-50/5 font-sans">
+                            <td colSpan={17} className="p-4 bg-emerald-50/10 border-b border-emerald-100">
+                              <div className="rounded-2xl border border-emerald-200/50 overflow-hidden bg-white shadow-md animate-in slide-in-from-top-2 duration-300">
+                                <div className="bg-emerald-600 px-4 py-2.5 text-white flex items-center gap-2">
+                                  <UserCheck size={16}/>
+                                  <span className="font-bold text-xs uppercase tracking-wider">
+                                    Daftar Anggota Keluarga Serumah ({r.fullName} - Blok {r.blockNumber})
+                                  </span>
+                                </div>
+                                <div className="p-3">
+                                  <table className="w-full text-left text-xs">
+                                    <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-[9px] border-b">
+                                      <tr>
+                                        <th className="p-2.5">Nama Anggota</th>
+                                        <th className="p-2.5">Hubungan</th>
+                                        <th className="p-2.5">Kontak (HP/WA)</th>
+                                        <th className="p-2.5">Jenis Kelamin</th>
+                                        <th className="p-2.5">Tempat, Tgl Lahir</th>
+                                        <th className="p-2.5">Agama</th>
+                                        <th className="p-2.5 text-center">Gol. Darah</th>
+                                        <th className="p-2.5">Pekerjaan</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {familyList.map((f: any, idx: number) => (
+                                        <tr key={idx} className="hover:bg-gray-50">
+                                          <td className="p-2.5 font-bold text-gray-900">{f.name}</td>
+                                          <td className="p-2.5">
+                                            <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-2.5 py-0.5 rounded-full uppercase">
+                                              {f.relation}
+                                            </span>
+                                          </td>
+                                          <td className="p-2.5 font-semibold text-gray-600">
+                                            {user ? (f.phone || '-') : '🔒 Terproteksi'}
+                                          </td>
+                                          <td className="p-2.5 text-gray-500">{f.gender || 'Perempuan'}</td>
+                                          <td className="p-2.5 text-gray-500">{f.birth_place || '-'}</td>
+                                          <td className="p-2.5 text-gray-500">{f.religion || 'Islam'}</td>
+                                          <td className="p-2.5 text-center font-bold text-rose-500">{f.blood_type || 'O'}</td>
+                                          <td className="p-2.5 text-gray-500">{f.job || '-'}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal CRUD */}
       {isModalOpen && (
         <ResidentModal
           resident={selectedResident}
           isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setSelectedResident(null);
-          }}
+          onClose={() => { setSelectedResident(null); setIsModalOpen(false); }}
           onSuccess={() => {
             queryClient.invalidateQueries({ queryKey: ['residents'] });
+            queryClient.invalidateQueries({ queryKey: ['allPayments'] });
             setIsModalOpen(false);
             setSelectedResident(null);
           }}
         />
-      )}
-
-      {/* Payment Period Modal */}
-      {showPaymentModal && selectedResidentForPayment && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">
-              Konfirmasi Pembayaran Iuran
-            </h3>
-            
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">
-                Warga: <span className="font-medium">{selectedResidentForPayment.fullName}</span>
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Blok: <span className="font-medium">{selectedResidentForPayment.blockNumber}</span>
-              </p>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Bulan
-                </label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
-                >
-                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-                    <option key={m} value={m}>{new Date(2024, m-1, 1).toLocaleDateString('id-ID', {month:'long'})}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tahun
-                </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
-                >
-                  {[2024, 2025, 2026, 2027, 2028].map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-6">
-              <p className="text-sm text-blue-800">
-                <strong>Periode:</strong> {new Date(selectedYear, selectedMonth - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })}
-              </p>
-              <p className="text-xs text-blue-600 mt-1">
-                Iuran wajib Rp 10.000 akan dicatat untuk periode ini
-              </p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => handlePaymentConfirm(false)}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Belum Lunas
-              </button>
-              <button
-                onClick={() => handlePaymentConfirm(true)}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Lunas
-              </button>
-              <button
-                onClick={() => {
-                  setShowPaymentModal(false);
-                  setSelectedResidentForPayment(null);
-                }}
-                className="flex-1 bg-gray-300 hover:bg-gray-400 text-gray-700 px-4 py-2 rounded-lg font-medium transition-colors"
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../supabaseClient';
 import { exportDataToExcel, exportDataToJSON, importDataFromExcel, downloadExcelTemplate } from '../services/dataService';
 import backupService, { BackupInfo } from '../services/backupService';
 import { 
@@ -18,7 +19,9 @@ import {
   History, 
   FileSpreadsheet,
   Save,
-  FileText
+  FileText,
+  UserPlus,
+  Lock
 } from 'lucide-react';
 
 export const Settings = () => {
@@ -32,8 +35,12 @@ export const Settings = () => {
   const [restoreProgress, setRestoreProgress] = useState({ current: 0, total: 0, status: '' });
   const [snapshots, setSnapshots] = useState<any[]>([]);
   const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const excelInputRef = useRef<HTMLInputElement>(null);
+
+  // Sign Up Admin Baru Form States
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [signUpLoading, setSignUpLoading] = useState(false);
+  const [signUpMessage, setSignUpMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
   const loadBackupInfo = async () => {
     try {
@@ -131,48 +138,56 @@ export const Settings = () => {
     }
   };
 
-  const handleCreateSnapshot = async () => {
-    try {
-      const result = backupService.createLocalSnapshot({}, `manual_${Date.now()}`);
-      if (result.success) {
-        setMessage({ type: 'success', text: '✅ Snapshot berhasil dibuat' });
-        loadBackupInfo();
-      }
-    } catch (error) {
-      setMessage({ type: 'error', text: '❌ Gagal membuat snapshot' });
-    }
-  };
-
-  const handleRestoreSnapshot = async (snapshotName: string) => {
-    if (!confirm(`Restore snapshot "${snapshotName}"? Data saat ini akan digantikan.`)) return;
-    
-    const snapshot = backupService.loadLocalSnapshot(snapshotName);
-    if (snapshot) {
-      try {
-        await backupService.restoreFromBackup(snapshot);
-        setMessage({ type: 'success', text: `✅ Snapshot "${snapshotName}" berhasil direstore` });
-        setTimeout(() => window.location.reload(), 1000);
-      } catch (error) {
-        setMessage({ type: 'error', text: `❌ Gagal restore snapshot` });
-      }
-    }
-  };
-
-  const handleDeleteSnapshot = (snapshotName: string) => {
-    if (confirm(`Hapus snapshot "${snapshotName}"?`)) {
-      const result = backupService.deleteSnapshot(snapshotName);
-      if (result.success) {
-        setMessage({ type: 'success', text: `✅ Snapshot "${snapshotName}" dihapus` });
-        loadBackupInfo();
-      }
-    }
-  };
-
   const handleClearCache = () => {
     if (confirm('Bersihkan cache? Ini akan menghapus data sementara di browser.')) {
       localStorage.clear();
       setMessage({ type: 'success', text: '✅ Cache dibersihkan' });
       setTimeout(() => window.location.reload(), 1000);
+    }
+  };
+
+  // Algoritme Pembuatan Akun/User Baru di Supabase Auth
+  const handleSignUpNewAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail.trim() || !newAdminPassword.trim()) {
+      setSignUpMessage({ type: 'error', text: 'Harap lengkapi email dan password!' });
+      return;
+    }
+
+    if (newAdminPassword.length < 6) {
+      setSignUpMessage({ type: 'error', text: 'Password minimal harus 6 karakter!' });
+      return;
+    }
+
+    setSignUpLoading(true);
+    setSignUpMessage(null);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: newAdminEmail.trim(),
+        password: newAdminPassword,
+        options: {
+          data: {
+            role: 'admin'
+          }
+        }
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setSignUpMessage({ 
+        type: 'success', 
+        text: `✅ Sukses! Akun ${newAdminEmail} telah terdaftar. Silakan minta admin baru untuk melakukan verifikasi di kotak masuk email mereka (jika fitur konfirmasi email aktif pada Supabase Anda).` 
+      });
+      setNewAdminEmail('');
+      setNewAdminPassword('');
+    } catch (err: any) {
+      console.error('Sign up error:', err);
+      setSignUpMessage({ type: 'error', text: `❌ Gagal mendaftarkan user baru: ${err.message || 'Error tidak dikenal'}` });
+    } finally {
+      setSignUpLoading(false);
     }
   };
 
@@ -191,11 +206,11 @@ export const Settings = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto p-4">
       {/* HEADER */}
       <div className="text-center mb-8">
         <h2 className="text-3xl font-black text-gray-800">Pengaturan & Backup</h2>
-        <p className="text-gray-500">Kelola backup dan restore data paguyuban</p>
+        <p className="text-gray-500">Kelola backup, restore, dan kredensial pengurus</p>
       </div>
 
       {/* MESSAGE */}
@@ -256,6 +271,77 @@ export const Settings = () => {
         )}
       </div>
 
+      {/* MASTER USER & PASSWORD CREATOR PANEL */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-emerald-50 text-emerald-700 rounded-lg">
+            <UserPlus size={20} />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-gray-800">Daftarkan Akun Pengurus Baru</h3>
+            <p className="text-sm text-gray-500">Buat email dan password pengurus baru untuk hak akses Admin</p>
+          </div>
+        </div>
+
+        {signUpMessage && (
+          <div className={`p-4 mb-4 rounded-xl border text-xs leading-relaxed ${
+            signUpMessage.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
+          }`}>
+            {signUpMessage.text}
+          </div>
+        )}
+
+        <form onSubmit={handleSignUpNewAdmin} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Email Admin Baru</label>
+              <input
+                type="email"
+                required
+                placeholder="contoh: pengurus@beryl.com"
+                className="w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-emerald-200 outline-none text-sm bg-white"
+                value={newAdminEmail}
+                onChange={e => setNewAdminEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Password Baru</label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                  <Lock size={16} />
+                </span>
+                <input
+                  type="password"
+                  required
+                  placeholder="Min. 6 Karakter"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border focus:ring-2 focus:ring-emerald-200 outline-none text-sm bg-white"
+                  value={newAdminPassword}
+                  onChange={e => setNewAdminPassword(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={signUpLoading}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50 text-xs uppercase tracking-wider"
+          >
+            {signUpLoading ? (
+              <>
+                <Loader2 className="animate-spin" size={16} />
+                Mendaftarkan...
+              </>
+            ) : (
+              <>
+                <UserPlus size={16} />
+                Daftarkan Pengurus Baru
+              </>
+            )}
+          </button>
+        </form>
+      </div>
+
       {/* BACKUP & RESTORE SECTION */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* BACKUP CARD */}
@@ -306,10 +392,6 @@ export const Settings = () => {
                 </>
               )}
             </button>
-            
-            <div className="text-xs text-gray-500 pt-4 border-t">
-              <p><strong>Tip:</strong> Simpan backup di lokasi yang aman.</p>
-            </div>
           </div>
         </div>
 
@@ -364,15 +446,7 @@ export const Settings = () => {
                   </>
                 )}
               </button>
-              
-              <p className="text-xs text-gray-500 mt-2 text-center">
-                Format file: Excel (.xlsx, .xls)
-              </p>
             </div>
-          </div>
-          
-          <div className="text-xs text-gray-500 pt-4 border-t">
-            <p><strong>Panduan:</strong> Download template → Isi data → Upload file. Data akan ditambahkan ke database.</p>
           </div>
         </div>
       </div>
@@ -390,12 +464,6 @@ export const Settings = () => {
         </div>
         
         <div className="space-y-4">
-          <div className="bg-red-50 p-4 rounded-xl">
-            <p className="text-sm text-red-700 mb-3">
-              <strong>⚠️ PERHATIAN:</strong> Aksi di bawah ini akan menghapus data.
-            </p>
-          </div>
-          
           <button
             onClick={handleClearCache}
             className="w-full py-3 border border-red-300 text-red-700 font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2"
@@ -403,16 +471,12 @@ export const Settings = () => {
             <Trash2 size={18} />
             Bersihkan Cache Browser
           </button>
-          
-          <p className="text-xs text-gray-500">
-            <strong>Cache:</strong> Menghapus data sementara di browser. Login diperlukan kembali.
-          </p>
         </div>
       </div>
 
       {/* FOOTER */}
       <div className="text-center text-gray-400 text-sm pt-6 border-t">
-        <p>Dashboard Keuangan Paguyuban Cluster Beryl • Version 2.0</p>
+        <p>Dashboard Keuangan Paguyuban Cluster Beryl • Version 2.1</p>
         <p className="mt-1">© {new Date().getFullYear()} - All rights reserved</p>
       </div>
     </div>

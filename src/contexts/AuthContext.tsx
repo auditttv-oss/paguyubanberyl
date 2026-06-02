@@ -2,27 +2,29 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../supabaseClient';
 import { Loader2 } from 'lucide-react';
+import { UserRole } from '../types';
 
-// Definisi tipe data untuk Context Auth
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
+  role: UserRole;
+  isKetua: boolean;
+  isBendahara: boolean;
+  isHumas: boolean;
+  isSecurity: boolean;
   isAdmin: boolean;
   signOut: () => Promise<void>;
 }
 
-// Membuat Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Provider Component
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Cek sesi saat aplikasi pertama kali dimuat
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -37,37 +39,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     checkSession();
 
-    // 2. Pasang pendengar (listener) untuk perubahan status login/logout
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
 
-    // Cleanup listener saat component di-unmount
     return () => subscription.unsubscribe();
   }, []);
 
-  // Fungsi Logout
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  // Nilai yang akan disebarkan ke seluruh aplikasi
+  const parseRole = (): UserRole => {
+    if (!user) return 'Tamu';
+
+    const metaRole = user.user_metadata?.role || user.user_metadata?.user_role;
+    if (metaRole === 'Ketua' || metaRole === 'Bendahara' || metaRole === 'Humas' || metaRole === 'Security') {
+      return metaRole as UserRole;
+    }
+
+    const email = user.email?.toLowerCase() || '';
+    if (email.includes('satpam') || email.includes('security')) return 'Security';
+    if (email.includes('ketua')) return 'Ketua';
+    if (email.includes('bendahara')) return 'Bendahara';
+    if (email.includes('humas') || email.includes('sekretaris')) return 'Humas';
+
+    return 'Ketua';
+  };
+
+  const role = parseRole();
+
   const value = {
     user,
     session,
     loading,
-    isAdmin: !!user, // Logika sederhana: jika ada user login, dianggap admin
+    role,
+    isKetua: role === 'Ketua',
+    isBendahara: role === 'Bendahara',
+    isHumas: role === 'Humas',
+    isSecurity: role === 'Security',
+    isAdmin: role === 'Ketua' || role === 'Bendahara' || role === 'Humas' || role === 'Security',
     signOut,
   };
 
-  // Tampilkan loading spinner jika status auth masih dicek
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 flex-col gap-3">
-        <Loader2 className="animate-spin text-emerald-600" size={48} />
-        <p className="text-gray-500 font-medium">Memuat sesi...</p>
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-3xl shadow-xl border border-gray-100 flex flex-col items-center max-w-sm w-full text-center">
+          <Loader2 className="animate-spin text-emerald-600 mb-4" size={48} />
+          <h3 className="font-bold text-gray-800 text-lg mb-1">Memuat Sesi Keamanan</h3>
+          <p className="text-gray-500 text-xs leading-relaxed">
+            Sedang memverifikasi kredensial pertahanan sistem Cluster Beryl. Mohon tunggu sebentar.
+          </p>
+        </div>
       </div>
     );
   }
@@ -75,7 +101,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
-// Custom Hook untuk menggunakan Auth Context dengan mudah
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {

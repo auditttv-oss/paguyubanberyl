@@ -55,43 +55,27 @@ export const Dashboard = () => {
     queryFn: fetchAllPayments,
   });
 
-  // Calculate monthly payment data
-  const monthlyPaymentData = useMemo(() => {
-    const startOfCurrentMonth = new Date(selectedYear, selectedMonth - 1, 1);
-    
-    // Kas Bulanan (Wajib)
-    const priorWajibIn = payments?.filter(p => {
-      const paymentDate = new Date(p.paid_at);
-      return paymentDate < startOfCurrentMonth;
-    }).reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-    
-    const priorWajibOut = expenses?.filter(e => {
-      const expenseDate = new Date(e.date);
-      return expenseDate < startOfCurrentMonth && e.category === 'Operasional';
-    }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-    
-    const currentMonthWajibIn = payments?.filter(p => {
-      const paymentDate = new Date(p.paid_at);
-      return paymentDate.getMonth() === selectedMonth - 1 && paymentDate.getFullYear() === selectedYear;
-    }).reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
-    
-    const currentMonthWajibOut = expenses?.filter(e => {
-      const expenseDate = new Date(e.date);
-      return expenseDate.getMonth() === selectedMonth - 1 && expenseDate.getFullYear() === selectedYear && e.category === 'Operasional';
-    }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-    
-    // Kas Acara (Sukarela)
-    const totalSukarelaIn = residents.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0);
-    const totalSukarelaOut = expenses?.filter(e => e.category === 'Acara').reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
-    
+  // Perhitungan Keuangan Kumulatif Lintas Tahun (All-Time Math)
+  const financialAllTime = useMemo(() => {
+    const totalWajibInAllTime = payments?.reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+    const totalWajibOutAllTime = expenses?.filter(e => e.category === 'Operasional').reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+    const totalSukarelaInAllTime = residents.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0);
+    const totalSukarelaOutAllTime = expenses?.filter(e => e.category === 'Acara').reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+
+    const wajibSaldoAkhir = totalWajibInAllTime - totalWajibOutAllTime;
+    const sukarelaSaldoTersedia = totalSukarelaInAllTime - totalSukarelaOutAllTime;
+    const balanceTotalAllTime = wajibSaldoAkhir + sukarelaSaldoTersedia;
+
     return {
-      wajibSaldoAkhir: (priorWajibIn - priorWajibOut) + currentMonthWajibIn - currentMonthWajibOut,
-      wajibTotalMasukTahun: payments?.filter(p => p.year === selectedYear).reduce((sum, p) => sum + (p.amount || 0), 0) || 0,
-      sukarelaTotalMasuk: totalSukarelaIn,
-      sukarelaTotalKeluar: totalSukarelaOut,
-      sukarelaSaldoTersedia: totalSukarelaIn - totalSukarelaOut,
+      wajibSaldoAkhir,
+      sukarelaSaldoTersedia,
+      balanceTotalAllTime,
+      totalWajibInAllTime,
+      totalWajibOutAllTime,
+      totalSukarelaInAllTime,
+      totalSukarelaOutAllTime
     };
-  }, [payments, expenses, residents, selectedMonth, selectedYear]);
+  }, [payments, expenses, residents]);
 
   // Statistics
   const stats = useMemo(() => {
@@ -136,31 +120,34 @@ export const Dashboard = () => {
     };
   }, [residents]);
 
-  // Calculate current month data
-  const currentMonthWajibIn = payments?.filter(p => {
-    const paymentDate = new Date(p.paid_at);
-    return paymentDate.getMonth() === selectedMonth - 1 && paymentDate.getFullYear() === selectedYear;
-  }).reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+  // FIX SINKRONISASI FORMULA: Memfilter kas masuk bulanan berdasarkan bulan sasaran p.month, bukan tanggal bayar p.paid_at
+  const currentMonthWajibIn = useMemo(() => {
+    return payments?.filter(p => 
+      p.month === selectedMonth && p.year === selectedYear
+    ).reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
+  }, [payments, selectedMonth, selectedYear]);
   
-  const currentMonthWajibOut = expenses?.filter(e => {
-    const expenseDate = new Date(e.date);
-    return expenseDate.getMonth() === selectedMonth - 1 && expenseDate.getFullYear() === selectedYear && e.category === 'Operasional';
-  }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+  const currentMonthWajibOut = useMemo(() => {
+    return expenses?.filter(e => {
+      const expenseDate = new Date(e.date);
+      return (expenseDate.getMonth() + 1) === selectedMonth && expenseDate.getFullYear() === selectedYear && e.category === 'Operasional';
+    }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+  }, [expenses, selectedMonth, selectedYear]);
   
-  const currentMonthSukarelaIn = residents.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0); // Total donasi (ini sudah benar)
+  const currentMonthSukarelaIn = residents.reduce((sum, r) => sum + (r.eventDuesAmount || 0), 0);
   const currentMonthSukarelaOut = expenses?.filter(e => {
     const expenseDate = new Date(e.date);
     return expenseDate.getMonth() === selectedMonth - 1 && expenseDate.getFullYear() === selectedYear && e.category === 'Acara';
   }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
   
-  // Calculate yearly data
+  // Akumulasi Tahunan Terpilih
   const yearlyTotalIn = payments?.filter(p => p.year === selectedYear).reduce((sum, p) => sum + (p.amount || 0), 0) || 0;
   const yearlyTotalOut = expenses?.filter(e => {
     const expenseDate = new Date(e.date);
     return expenseDate.getFullYear() === selectedYear && e.category === 'Operasional';
   }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
   
-  // Calculate cumulative balance by month (correct logic)
+  // Data kumulatif bulanan tahun terpilih
   const monthlyCumulativeData = useMemo(() => {
     const data = [];
     let cumulativeBalance = 0;
@@ -177,7 +164,6 @@ export const Dashboard = () => {
       const income = monthPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
       const expense = monthExpenses.reduce((sum, e) => sum + (e.amount || 0), 0);
       
-      // Add current month to cumulative balance
       cumulativeBalance += (income - expense);
       
       data.push({
@@ -191,19 +177,6 @@ export const Dashboard = () => {
     
     return data;
   }, [payments, expenses, selectedYear]);
-
-  // Calculate grand total (all income - all expenses)
-  const totalIncome = yearlyTotalIn + monthlyPaymentData.sukarelaTotalMasuk; // Kas bulanan + Total Kas Acara (semua bulan)
-  const totalExpenses = yearlyTotalOut + monthlyPaymentData.sukarelaTotalKeluar; // Pengeluaran operasional + Total Pengeluaran Acara (semua bulan)
-  const grandTotal = totalIncome - totalExpenses;
-
-  // Chart data
-  const occupancyChartData = useMemo(() => [
-    { name: 'Menetap', value: stats.menetap, color: '#10b981' },
-    { name: 'Penyewa', value: stats.penyewa, color: '#3b82f6' },
-    { name: 'Kunjungan', value: stats.kunjungan, color: '#f59e0b' },
-    { name: '2026', value: stats.ditempati2026, color: '#8b5cf6' }
-  ].filter(item => item.value > 0), [stats]);
 
   // Loading state
   if (isLoading || expensesLoading || paymentsLoading) {
@@ -223,6 +196,7 @@ export const Dashboard = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 py-6 md:py-8">
+        
         {/* Header */}
         <header className="mb-6 md:mb-8">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 md:gap-6">
@@ -234,7 +208,7 @@ export const Dashboard = () => {
                 <div>
                   <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Dashboard Keuangan Paguyuban Cluster Beryl</h1>
                   <p className="text-gray-600 text-sm">
-                    Update terakhir: {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    Laporan keuangan terverifikasi kumulatif dan berkala.
                   </p>
                 </div>
               </div>
@@ -247,18 +221,9 @@ export const Dashboard = () => {
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
                   className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
                 >
-                  <option value={1}>Januari</option>
-                  <option value={2}>Februari</option>
-                  <option value={3}>Maret</option>
-                  <option value={4}>April</option>
-                  <option value={5}>Mei</option>
-                  <option value={6}>Juni</option>
-                  <option value={7}>Juli</option>
-                  <option value={8}>Agustus</option>
-                  <option value={9}>September</option>
-                  <option value={10}>Oktober</option>
-                  <option value={11}>November</option>
-                  <option value={12}>Desember</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+                    <option key={m} value={m}>{getMonthName(m)}</option>
+                  ))}
                 </select>
                 <select
                   value={selectedYear}
@@ -268,122 +233,133 @@ export const Dashboard = () => {
                   <option value={2024}>2024</option>
                   <option value={2025}>2025</option>
                   <option value={2026}>2026</option>
+                  <option value={2027}>2027</option>
                 </select>
               </div>
             </div>
           </div>
         </header>
 
-        {/* Top Metrics Section - Realtime Overview */}
+        {/* Realtime Overview - Kumulatif Semua Waktu */}
         <section className="mb-6 md:mb-8">
-          {/* Baris 1: Total Warga + Grand Total (1 card kesamping) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 mb-4">
-            {/* Combined Total Warga & Grand Total Card */}
-            <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-5 rounded-2xl shadow-lg lg:col-span-2">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Total Warga Section */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-white/20 rounded-lg">
-                        <UsersIcon size={20} />
-                      </div>
-                      <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Realtime</span>
-                    </div>
-                    <p className="text-3xl font-bold mb-1">{stats.total}</p>
-                    <p className="text-sm opacity-90">Total Warga Tercatat</p>
-                    <p className="text-xs opacity-75 mt-2">Kepala Keluarga</p>
+          <div className="grid grid-cols-1 gap-4 mb-4">
+            <div className="bg-gradient-to-br from-emerald-800 to-teal-950 text-white p-6 rounded-3xl shadow-xl">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-white/10">
+                
+                {/* Total Balance */}
+                <div className="pb-4 md:pb-0">
+                  <div className="flex items-center gap-2 mb-2 text-emerald-300">
+                    <Wallet size={20} />
+                    <span className="text-xs font-black uppercase tracking-widest">Saldo Riil Saat Ini</span>
+                  </div>
+                  <h2 className="text-3xl md:text-4xl font-black">
+                    {formatCurrency(financialAllTime.balanceTotalAllTime)}
+                  </h2>
+                  <p className="text-xs text-emerald-200/80 mt-1">Akumulasi Kas Wajib + Kas Sukarela (Seluruh Waktu)</p>
+                </div>
+
+                {/* Kas Wajib Card */}
+                <div className="py-4 md:py-0 md:pl-6">
+                  <p className="text-xs font-bold text-emerald-300 uppercase mb-1">Kas Wajib (Kumulatif)</p>
+                  <p className="text-2xl font-bold">{formatCurrency(financialAllTime.wajibSaldoAkhir)}</p>
+                  <div className="text-[10px] text-emerald-200/70 mt-1 space-y-0.5">
+                    <p>Total Masuk: {formatCurrency(financialAllTime.totalWajibInAllTime)}</p>
+                    <p>Total Keluar: {formatCurrency(financialAllTime.totalWajibOutAllTime)}</p>
                   </div>
                 </div>
 
-                {/* Grand Total Section */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="p-2 bg-white/20 rounded-lg">
-                        <CreditCard size={20} />
-                      </div>
-                      <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Grand Total</span>
-                    </div>
-                    <p className="text-3xl font-bold mb-1">{formatCurrency(grandTotal)}</p>
-                    <p className="text-sm opacity-90">Grand Total Kas</p>
-                    <div className="mt-2 pt-2 border-t border-white/20">
-                      <p className="text-xs opacity-75">Total Masuk: {formatCurrency(totalIncome)}</p>
-                      <p className="text-xs opacity-75">Total Keluar: {formatCurrency(totalExpenses)}</p>
-                    </div>
+                {/* Kas Acara Card */}
+                <div className="pt-4 md:pt-0 md:pl-6">
+                  <p className="text-xs font-bold text-emerald-300 uppercase mb-1">Kas Acara (Kumulatif)</p>
+                  <p className="text-2xl font-bold">{formatCurrency(financialAllTime.sukarelaSaldoTersedia)}</p>
+                  <div className="text-[10px] text-emerald-200/70 mt-1 space-y-0.5">
+                    <p>Total Sukarela: {formatCurrency(financialAllTime.totalSukarelaInAllTime)}</p>
+                    <p>Total Keluar: {formatCurrency(financialAllTime.totalSukarelaOutAllTime)}</p>
                   </div>
                 </div>
+
               </div>
             </div>
           </div>
 
-          {/* Baris 2: Kas Bulanan, Kas Acara, Total Kas 12 Bulan (3 kolom) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Kas Bulanan Berjalan */}
-            <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white p-5 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <Wallet size={20} />
+          {/* Baris Berjalan Bulanan & Tahunan */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            
+            {/* Bulan Berjalan */}
+            <div className="bg-white p-5 rounded-2xl border shadow-sm animate-in fade-in duration-300">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase">Periode Bulanan</span>
+                <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg">
+                  {getMonthName(selectedMonth)}
+                </span>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pemasukan Kas:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(currentMonthWajibIn)}</span>
                 </div>
-                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Bulan {getMonthName(selectedMonth)}</span>
-              </div>
-              <p className="text-lg font-bold mb-1">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.income || 0)}</p>
-              <p className="text-xs opacity-75">Pemasukan</p>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-sm font-bold">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.expense || 0)}</p>
-                <p className="text-xs opacity-75">Pengeluaran</p>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-lg font-bold">{formatCurrency(monthlyCumulativeData[selectedMonth - 1]?.cumulativeBalance || 0)}</p>
-                <p className="text-xs opacity-75">Saldo Kumulatif</p>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pengeluaran Kas:</span>
+                  <span className="font-bold text-red-600">{formatCurrency(currentMonthWajibOut)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-bold text-gray-800">
+                  <span>Sisa Bulan Ini:</span>
+                  <span>{formatCurrency(currentMonthWajibIn - currentMonthWajibOut)}</span>
+                </div>
               </div>
             </div>
 
-            {/* Kas Acara Berjalan */}
-            <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white p-5 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <Gift size={20} />
+            {/* Kas Acara Aktif */}
+            <div className="bg-white p-5 rounded-2xl border shadow-sm">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase">Kas Acara Terkumpul</span>
+                <span className="text-xs font-black text-purple-600 bg-purple-50 px-2.5 py-1 rounded-lg">Sukarela</span>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Sumbangan Warga:</span>
+                  <span className="font-bold text-purple-600">{formatCurrency(currentMonthSukarelaIn)}</span>
                 </div>
-                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">Bulan {getMonthName(selectedMonth)}</span>
-              </div>
-              <p className="text-lg font-bold mb-1">{formatCurrency(currentMonthSukarelaIn)}</p>
-              <p className="text-xs opacity-75">Total Donasi</p>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-sm font-bold">{formatCurrency(currentMonthSukarelaOut)}</p>
-                <p className="text-xs opacity-75">Pengeluaran Acara</p>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-lg font-bold">{formatCurrency(currentMonthSukarelaIn - currentMonthSukarelaOut)}</p>
-                <p className="text-xs opacity-75">Sisa Saldo Acara</p>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Belanja Acara:</span>
+                  <span className="font-bold text-red-600">{formatCurrency(currentMonthSukarelaOut)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-bold text-gray-800">
+                  <span>Saldo Acara Aktif:</span>
+                  <span>{formatCurrency(currentMonthSukarelaIn - currentMonthSukarelaOut)}</span>
+                </div>
               </div>
             </div>
 
-            {/* Total Kas 12 Bulan */}
-            <div className="bg-gradient-to-br from-orange-500 to-orange-600 text-white p-5 rounded-2xl shadow-lg">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2 bg-white/20 rounded-lg">
-                  <TrendingUp size={20} />
+            {/* Rekap Tahunan */}
+            <div className="bg-white p-5 rounded-2xl border shadow-sm">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs font-bold text-gray-400 uppercase">Akumulasi Tahunan</span>
+                <span className="text-xs font-black text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">Tahun {selectedYear}</span>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pemasukan {selectedYear}:</span>
+                  <span className="font-bold text-emerald-600">{formatCurrency(yearlyTotalIn)}</span>
                 </div>
-                <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">12 Bulan</span>
-              </div>
-              <p className="text-2xl font-bold mb-1">{formatCurrency(yearlyTotalIn)}</p>
-              <p className="text-sm opacity-90">Total Kas 12 Bulan</p>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-sm font-bold">{formatCurrency(yearlyTotalOut)}</p>
-                <p className="text-xs opacity-75">Total pengeluaran Kas 12 bulan</p>
-              </div>
-              <div className="mt-2 pt-2 border-t border-white/20">
-                <p className="text-lg font-bold">{formatCurrency(yearlyTotalIn - yearlyTotalOut)}</p>
-                <p className="text-xs opacity-75">Sisa Saldo 12 bulan</p>
+                <div className="flex justify-between">
+                  <span className="text-gray-500">Pengeluaran {selectedYear}:</span>
+                  <span className="font-bold text-red-600">{formatCurrency(yearlyTotalOut)}</span>
+                </div>
+                <div className="border-t pt-2 flex justify-between font-bold text-gray-800">
+                  <span>Sisa Saldo {selectedYear}:</span>
+                  <span>{formatCurrency(yearlyTotalIn - yearlyTotalOut)}</span>
+                </div>
               </div>
             </div>
+
           </div>
         </section>
 
         {/* Bottom Section - Status Hunian & Payment Statistics */}
         <section className="mb-6 md:mb-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
             {/* Status Hunian Infografis */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
               <div className="flex items-center gap-3 mb-6">
@@ -433,18 +409,6 @@ export const Dashboard = () => {
                   </div>
                 </div>
               </div>
-              
-              {/* Pie Chart Visualization */}
-              <div className="mt-6">
-                <div className="flex items-center justify-center space-x-4">
-                  {occupancyChartData.map((item, index) => (
-                    <div key={index} className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded-full" style={{backgroundColor: item.color}}></div>
-                      <span className="text-sm text-gray-600">{item.name}: {item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
             
             {/* Payment Statistics */}
@@ -459,7 +423,6 @@ export const Dashboard = () => {
                 </div>
               </div>
               
-              {/* Kas Bulanan Status */}
               <div className="mb-6">
                 <h4 className="text-sm font-bold text-gray-700 mb-3">Kas Bulanan (Wajib)</h4>
                 <div className="grid grid-cols-2 gap-4">
@@ -486,43 +449,14 @@ export const Dashboard = () => {
                   </div>
                 </div>
               </div>
-              
-              {/* Kas Acara Statistics */}
-              <div>
-                <h4 className="text-sm font-bold text-gray-700 mb-3">Kas Acara (Sukarela)</h4>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-purple-50 p-4 rounded-xl border border-purple-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-purple-700">Sudah Donasi</span>
-                      <span className="text-2xl font-bold text-purple-600">{stats.donatedSukarela}</span>
-                    </div>
-                    <p className="text-xs text-purple-600 mb-2">{stats.sukarelaPercentage}% dari total warga</p>
-                    <div className="w-full bg-purple-200 rounded-full h-3">
-                      <div className="bg-purple-500 h-3 rounded-full transition-all duration-500" style={{width: `${stats.sukarelaPercentage}%`}} />
-                    </div>
-                    <p className="text-xs text-purple-600 mt-2">Total: {formatCurrency(stats.totalSukarela)}</p>
-                  </div>
-                  
-                  <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">Belum Donasi</span>
-                      <span className="text-2xl font-bold text-gray-600">{stats.notDonatedSukarela}</span>
-                    </div>
-                    <p className="text-xs text-gray-600 mb-2">{stats.notSukarelaPercentage}% dari total warga</p>
-                    <div className="w-full bg-gray-200 rounded-full h-3">
-                      <div className="bg-gray-500 h-3 rounded-full transition-all duration-500" style={{width: `${stats.notSukarelaPercentage}%`}} />
-                    </div>
-                    <p className="text-xs text-gray-600 mt-2">Rata-rata: {formatCurrency(stats.avgSukarela)}</p>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </section>
 
-        {/* Monthly Statistics Table & Pengeluaran Kas Acara */}
+        {/* Monthly Statistics Table */}
         <section className="mb-6 md:mb-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
             {/* Monthly Statistics Table */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
               <div className="flex items-center gap-3 mb-6">
@@ -556,41 +490,20 @@ export const Dashboard = () => {
                           <td className="py-1 px-1">
                             <div className="flex items-center gap-1">
                               <span className="font-medium text-gray-800 text-xs">{['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'][i]}</span>
-                              {isActive && <span className="text-xs font-medium text-emerald-600 bg-emerald-100 px-1 py-0.5 rounded-full">Aktif</span>}
+                              {isActive && <span className="text-[10px] font-medium text-emerald-600 bg-emerald-100 px-1 py-0.2 rounded-full">Aktif</span>}
                             </div>
                           </td>
                           <td className="text-right py-1 px-1 text-xs">{data.income > 0 ? formatCurrency(data.income) : '-'}</td>
                           <td className="text-right py-1 px-1 text-xs">{data.expense > 0 ? formatCurrency(data.expense) : '-'}</td>
                           <td className="text-right py-1 px-1 font-medium text-xs">{formatCurrency(data.cumulativeBalance)}</td>
                           <td className="text-center py-1 px-1">
-                            <span className={`px-1 py-0.5 rounded-full text-xs font-medium ${statusColor}`}>
+                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${statusColor}`}>
                               {data.status}
                             </span>
                           </td>
                         </tr>
                       );
                     })}
-                    
-                    {/* Calculate totals */}
-                    {(() => {
-                      const totalIncome = yearlyTotalIn;
-                      const totalExpense = yearlyTotalOut;
-                      const finalBalance = totalIncome - totalExpense;
-                      
-                      return (
-                        <tr className="font-bold bg-gray-50">
-                          <td className="py-1 px-1 text-xs">Total</td>
-                          <td className="text-right py-1 px-1 text-xs">{formatCurrency(totalIncome)}</td>
-                          <td className="text-right py-1 px-1 text-xs">{formatCurrency(totalExpense)}</td>
-                          <td className="text-right py-1 px-1 text-xs">{formatCurrency(finalBalance)}</td>
-                          <td className="text-center py-1 px-1">
-                            <span className="px-1 py-0.5 rounded-full text-xs font-medium text-emerald-600 bg-emerald-50">
-                              Kas Sehat
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })()}
                   </tbody>
                 </table>
               </div>
@@ -624,35 +537,20 @@ export const Dashboard = () => {
                         </div>
                         <div>
                           <p className="text-xs font-bold text-gray-800">{expense.description}</p>
-                          <p className="text-xs text-gray-500">{new Date(expense.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                          <p className="text-[10px] text-gray-500">{new Date(expense.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                         </div>
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-bold text-red-600">{formatCurrency(expense.amount || 0)}</p>
-                        <p className="text-xs text-red-500">pengeluaran</p>
+                        <p className="text-[10px] text-red-500">pengeluaran</p>
                       </div>
                     </div>
                   ))}
               </div>
-              
-              {(!expenses?.filter(e => {
-                const expenseDate = new Date(e.date);
-                return expenseDate.getFullYear() === selectedYear && e.category === 'Acara';
-              }).length) && (
-                <div className="text-center py-8">
-                  <TrendingDown className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">Belum ada pengeluaran kas acara</p>
-                  <p className="text-sm text-gray-400">Pengeluaran acara akan muncul di sini</p>
-                </div>
-              )}
             </div>
+
           </div>
         </section>
-
-        {/* Footer */}
-        <footer className="text-center text-gray-500 text-sm">
-          <p>Sistem Manajemen Warga Cluster Beryl • Dashboard • Total {stats.total} KK</p>
-        </footer>
       </div>
     </div>
   );

@@ -2,9 +2,15 @@
 
 export type OccupancyStatus = 'Menetap' | 'Penyewa' | 'Kunjungan' | 'Ditempati 2026';
 
-export type TabView = 'dashboard' | 'residents' | 'expenses' | 'blog' | 'structure' | 'adart' | 'settings';
+export type TabView = 'dashboard' | 'residents' | 'expenses' | 'blog' | 'structure' | 'adart' | 'settings' | 'keamanan';
 
-export type UserRole = 'admin' | 'guest';
+export type UserRole = 'Ketua' | 'Bendahara' | 'Humas' | 'Security' | 'Tamu' | 'admin' | 'guest';
+
+export interface FamilyMember {
+  name: string;
+  relation: 'Istri' | 'Anak' | 'Mertua' | 'Ayah' | 'Ibu' | 'Lainnya';
+  phone?: string;
+}
 
 export interface Resident {
   id: string;
@@ -20,12 +26,10 @@ export interface Resident {
   eventDuesCategory?: string;
 }
 
-/** Interface untuk Dashboard & Resident Table */
 export interface ResidentWithPayment extends Resident {
   isPaidCurrentMonth: boolean;
 }
 
-/** Interface untuk Pengeluaran */
 export interface Expense {
   id: string;
   description: string;
@@ -35,7 +39,6 @@ export interface Expense {
   receiptUrl: string;
 }
 
-/** Interface untuk Pembayaran Kas */
 export interface Payment {
   id: string;
   resident_id: string;
@@ -45,7 +48,6 @@ export interface Payment {
   paid_at: number;
 }
 
-/** Interface untuk Aspirasi/Blog */
 export interface Comment {
   id: string;
   name: string;
@@ -53,7 +55,6 @@ export interface Comment {
   createdAt: string;
 }
 
-/** FIX: Interface untuk DashboardView agar build sukses */
 export interface FinancialSummary {
   balanceTotal: number;
   balanceMonthly: number;
@@ -64,7 +65,6 @@ export interface FinancialSummary {
   totalEventDues: number;
 }
 
-/** Interface untuk System Info */
 export interface BackupInfo {
   backupDate: string;
   totalResidents: number;
@@ -75,4 +75,13 @@ export interface BackupInfo {
   totalExpensesAmount: string;
   version: string;
   size: number;
+}
+
+export interface Tamu {
+  id_tamu: number;
+  nama_tamu: string;
+  id_rumah_tujuan: string;
+  waktu_masuk: string | null;
+  waktu_keluar: string | null;
+  titip_identitas: string;
 }

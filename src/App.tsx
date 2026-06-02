@@ -12,6 +12,8 @@ import { Settings } from './pages/Settings';
 import { Blog } from './pages/Blog';
 import { AdArtNew } from './pages/AdArt_new';
 import { Structure } from './pages/Structure';
+import { Keamanan } from './pages/Keamanan';
+import { Fasum } from './pages/Fasum'; // Import halaman Fasum
 
 // Import Components
 import { Navbar } from './components/Navbar';
@@ -28,7 +30,7 @@ const queryClient = new QueryClient({
 });
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
-  const { user } = useAuth();
+  const { user, isSecurity } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   return (
@@ -55,7 +57,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
           <div className="w-8" />
         </div>
 
-        {user && <div className="hidden md:block"><Navbar /></div>}
+        {user && !isSecurity && <div className="hidden md:block"><Navbar /></div>}
 
         <main className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50">
           <div className="max-w-7xl mx-auto pb-20 animate-in fade-in duration-500">
@@ -80,15 +82,23 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function AppContent() {
+  const { user, isSecurity } = useAuth();
+
+  // ALGORITME LOCKDOWN SATPAM: Hanya diizinkan melihat menu Log Keamanan dan Fasum
+  if (user && isSecurity) {
+    return (
+      <Routes>
+        <Route path="/keamanan" element={<Layout><Keamanan /></Layout>} />
+        <Route path="/fasum" element={<Layout><Fasum /></Layout>} />
+        <Route path="*" element={<Navigate to="/keamanan" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
       
-      {/* 
-         PERUBAHAN PENTING: 
-         Layout Residents & Expenses sekarang TIDAK dibungkus ProtectedRoute.
-         Tamu bisa melihat, tapi fitur edit/hapus diatur di dalam komponen masing-masing.
-      */}
       <Route path="/" element={<Layout><Dashboard /></Layout>} />
       <Route path="/residents" element={<Layout><Residents /></Layout>} />
       <Route path="/expenses" element={<Layout><Expenses /></Layout>} />
@@ -96,7 +106,10 @@ function AppContent() {
       <Route path="/ad-art" element={<Layout><AdArtNew /></Layout>} />
       <Route path="/structure" element={<Layout><Structure /></Layout>} />
       
-      {/* HANYA SETTINGS YANG PERLU LOGIN MUTLAK */}
+      {/* KEDUA ROUTE INI DAPAT DIAKSES OLEH TAMU (UNPROTECTED) */}
+      <Route path="/keamanan" element={<Layout><Keamanan /></Layout>} />
+      <Route path="/fasum" element={<Layout><Fasum /></Layout>} />
+      
       <Route path="/settings" element={<ProtectedRoute><Layout><Settings /></Layout></ProtectedRoute>} />
       
       <Route path="*" element={<Navigate to="/" />} />

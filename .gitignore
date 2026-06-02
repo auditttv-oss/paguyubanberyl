@@ -1,24 +1,25 @@
-# Dependencies
+# Dependency / Folder library yang sangat berat (Wajib Diabaikan)
 node_modules/
-.pnpm
-.npm
-.yarn/
+package-lock.json
 
-# Environment Variables
+# File Kunci / Kredensial Sensitif (Wajib Diabaikan demi Keamanan)
 .env
 .env.local
 .env.production
-.env.*
+.env.development
+.env.test
 
-# Build & OS Files
+# Hasil Build / Kompilasi
 dist/
 build/
-.DS_Store
-Thumbs.db
 
-# Archives
+# Berkas Arsip / Kompresi (Seperti file .zip di gambar Anda)
 *.zip
-wargaberyl3.zip
+*.rar
+*.tar.gz
 
-# Logs
-*.log
+# Sistem Operasi & Editor
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
