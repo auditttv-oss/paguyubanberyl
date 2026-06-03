@@ -712,7 +712,7 @@ export const Residents = () => {
         </div>
       )}
 
-      {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF (RESOLUSI BUG NESTING BARU) */}
+      {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF (RESOLUSI WARNING DOM NESTING) */}
       {activeTab === 'advanced_profile' && (
         <div className="space-y-4 animate-in fade-in duration-300">
           

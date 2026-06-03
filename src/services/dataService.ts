@@ -22,6 +22,63 @@ export const formatToLocalIdDate = (dateStr: string): string => {
   }
 };
 
+// ==================== PENYIMPANAN STRUKTUR ORGANISASI KELOMPOK & SEKSI (SUPABASE & FALLBACK) ====================
+export const fetchLeadershipStructure = async (): Promise<any[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('organization_structure')
+      .select('data')
+      .eq('id', 'leadership')
+      .single();
+    if (error) throw error;
+    return data?.data || [];
+  } catch (err) {
+    console.warn("Table 'organization_structure' missing or inaccessible. Loading from local fallback.");
+    const local = localStorage.getItem('beryl_leadership_struct');
+    return local ? JSON.parse(local) : [];
+  }
+};
+
+export const saveLeadershipStructure = async (structureData: any[]) => {
+  try {
+    const { error } = await supabase
+      .from('organization_structure')
+      .upsert({ id: 'leadership', data: structureData, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Saving structure to local storage fallback.");
+    localStorage.setItem('beryl_leadership_struct', JSON.stringify(structureData));
+  }
+};
+
+export const fetchDivisionsStructure = async (): Promise<any[]> => {
+  try {
+    const { data, error } = await supabase
+      .from('organization_structure')
+      .select('data')
+      .eq('id', 'divisions')
+      .single();
+    if (error) throw error;
+    return data?.data || [];
+  } catch (err) {
+    console.warn("Table 'organization_structure' missing or inaccessible. Loading from local fallback.");
+    const local = localStorage.getItem('beryl_divisions_struct');
+    return local ? JSON.parse(local) : [];
+  }
+};
+
+export const saveDivisionsStructure = async (structureData: any[]) => {
+  try {
+    const { error } = await supabase
+      .from('organization_structure')
+      .upsert({ id: 'divisions', data: structureData, updated_at: new Date().toISOString() });
+    if (error) throw error;
+  } catch (err) {
+    console.warn("Saving structure to local storage fallback.");
+    localStorage.setItem('beryl_divisions_struct', JSON.stringify(structureData));
+  }
+};
+
 // ==================== RIWAYAT KAS ACARA RELASIONAL ====================
 export interface EventPayment {
   id: string;
@@ -236,7 +293,6 @@ export const serializeExtendedFields = (fields: ExtendedResidentFields, rawNotes
   return JSON.stringify({ _is_extended: true, fields, rawNotes });
 };
 
-// SENSOR PERTAHANAN DATA TINGKAT API: Secara dinamis menyensor nomor telepon DAN tanggal lahir bagi Mode Tamu sebelum data dikirimkan ke browser
 export const deserializeExtendedFields = (notesString: string | null, isAuthenticated: boolean = false): { fields: ExtendedResidentFields; rawNotes: string } => {
   const defaultFields: ExtendedResidentFields = {
     id_rumah: '', jenis_kelamin: 'Laki-Laki', peran_keluarga: 'Kepala Keluarga',
@@ -254,15 +310,13 @@ export const deserializeExtendedFields = (notesString: string | null, isAuthenti
         if (!isAuthenticated && parsed.fields) {
           if (parsed.fields.no_hp_pemilik_asli) parsed.fields.no_hp_pemilik_asli = '🔒 Terproteksi';
           
-          // SENSOR TANGGAL LAHIR KEPALA KELUARGA UTAMA
           if (parsed.fields.tempat_tgl_lahir) parsed.fields.tempat_tgl_lahir = '🔒 Terproteksi';
           
-          // SENSOR TANGGAL LAHIR & NO. HP SELURUH ANGGOTA KELUARGA SERUMAH
           if (parsed.fields.family_members_list) {
             parsed.fields.family_members_list = parsed.fields.family_members_list.map((f: any) => ({ 
               ...f, 
               phone: '🔒 Terproteksi',
-              birth_place: '🔒 Terproteksi' // Menyensor tgl lahir anggota keluarga lain
+              birth_place: '🔒 Terproteksi' 
             }));
           }
         }
