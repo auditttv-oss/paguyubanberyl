@@ -54,7 +54,7 @@ export const Residents = () => {
   // Tabs
   const [activeTab, setActiveTab] = useState<'manage' | 'rekap' | 'advanced_profile'>('manage');
 
-  // State
+  // State pencarian
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedResident, setSelectedResident] = useState<Resident | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,7 +174,6 @@ export const Residents = () => {
   const filteredAdvancedResidents = useMemo(() => {
     if (!advancedSearch.trim()) return processedResidents;
     return processedResidents.filter(r => {
-      // Meneruskan variabel otentikasi !!user agar sensor keamanan berjalan sinkron saat pencarian data diinisiasi
       const { fields, rawNotes } = deserializeExtendedFields(r.notes, !!user);
       
       const familyNames = (fields as any).family_members_list?.map((f: any) => f.name).join(' ') || '';
@@ -314,15 +313,14 @@ export const Residents = () => {
           <p className="text-gray-500 text-sm">Cluster Beryl - Total {stats.total} Kepala Keluarga</p>
         </div>
         
-        {isAdmin && (
-          <button
-            onClick={() => { setSelectedResident(null); setIsModalOpen(true); }}
-            className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 text-sm"
-          >
-            <UserPlus size={18} />
-            Tambah Warga Baru
-          </button>
-        )}
+        {/* PEMBARUAN KEAMANAN: Semua mode (Admin, Warga, maupun Tamu) diizinkan untuk menambah warga baru */}
+        <button
+          onClick={() => { setSelectedResident(null); setIsModalOpen(true); }}
+          className="px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center justify-center gap-2 text-sm"
+        >
+          <UserPlus size={18} />
+          Tambah Warga Baru
+        </button>
       </div>
 
       {/* Tabs Menu */}
@@ -556,85 +554,109 @@ export const Residents = () => {
         </div>
       )}
 
-      {/* Tab 2: REKAP BULANAN (12 MONTHS) */}
+      {/* Tab 2: REKAP BULANAN DENGAN BAR PENCARIAN DEDIKASI */}
       {activeTab === 'rekap' && (
-        <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-          <div className="p-4 bg-gray-50 border-b flex flex-col md:flex-row justify-between md:items-center gap-2">
-            <div>
-              <p className="font-bold text-gray-800 text-sm">Rekapitulasi Setoran Kas Wajib (Rp 10.000/Bulan)</p>
-              <p className="text-xs text-gray-500">
-                {isAdmin ? 'Klik pada sel iuran bulanan untuk mengubah status pembayaran.' : 'Laporan iuran warga berjalan.'}
-              </p>
+        <div className="space-y-4">
+          
+          {/* Bar Pencarian di Laporan Rekap Bulanan */}
+          <div className="bg-white p-4 rounded-2xl border shadow-sm flex gap-3 items-center">
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600" size={18} />
+              <input
+                type="text"
+                placeholder="Cari nama warga atau blok di laporan rekap bulanan..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 outline-none focus:ring-2 focus:ring-emerald-200 text-sm bg-white"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-            <div className="flex items-center gap-2">
-              <span className="flex items-center gap-1 text-xs text-emerald-700 font-bold"><Check size={14}/> Lunas</span>
-              <span className="flex items-center gap-1 text-xs text-red-500 font-bold"><X size={14}/> Belum</span>
-            </div>
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm('')}
+                className="text-xs font-bold text-gray-400 hover:text-gray-600 underline whitespace-nowrap"
+              >
+                Reset Pencarian
+              </button>
+            )}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
-              <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px]">
-                <tr>
-                  <th className="p-3 border-r">No.</th>
-                  <th className="p-3 border-r min-w-[150px]">Nama Warga</th>
-                  <th className="p-3 border-r">Blok</th>
-                  {MONTH_NAMES.map((m) => (
-                    <th key={m} className="p-2 border-r text-center">{m.substring(0, 3)}</th>
-                  ))}
-                  <th className="p-3 border-r text-center">Total</th>
-                  <th className="p-3 text-center">Status Bayar</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {processedResidents.map((r, index) => {
-                  let payCount = 0;
-                  return (
-                    <tr key={r.id} className="hover:bg-gray-50/50">
-                      <td className="p-3 border-r text-gray-400 font-bold">{index + 1}</td>
-                      <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
-                      <td className="p-3 border-r font-black text-gray-700">{r.blockNumber}</td>
-                      
-                      {Array.from({ length: 12 }, (_, i) => {
-                        const monthNum = i + 1;
-                        const isPaid = checkPaymentStatus(r.id, monthNum);
-                        if (isPaid) payCount++;
+          <div className="bg-white rounded-2xl border shadow-sm overflow-hidden animate-in fade-in duration-300">
+            <div className="p-4 bg-gray-50 border-b flex flex-col md:flex-row justify-between md:items-center gap-2">
+              <div>
+                <p className="font-bold text-gray-800 text-sm">Rekapitulasi Setoran Kas Wajib (Rp 10.000/Bulan)</p>
+                <p className="text-xs text-gray-500">
+                  {isAdmin ? 'Klik pada sel iuran bulanan untuk mengubah status pembayaran.' : 'Laporan iuran warga berjalan.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="flex items-center gap-1 text-xs text-emerald-700 font-bold"><Check size={14}/> Lunas</span>
+                <span className="flex items-center gap-1 text-xs text-red-500 font-bold"><X size={14}/> Belum</span>
+              </div>
+            </div>
 
-                        return (
-                          <td 
-                            key={monthNum} 
-                            onClick={() => handleCellClick(r.id, monthNum)}
-                            className={`p-2 border-r text-center transition-all ${
-                              isAdmin ? 'cursor-pointer hover:scale-110' : ''
-                            } ${isPaid ? 'bg-emerald-50/50' : 'bg-rose-50/20'}`}
-                          >
-                            <div className="flex items-center justify-center">
-                              {isPaid ? (
-                                <span className="bg-emerald-500 text-white rounded-full p-0.5" title="Lunas Rp 10.000">
-                                  <Check size={10} strokeWidth={4}/>
-                                </span>
-                              ) : (
-                                <span className="text-gray-300">
-                                  <X size={10} strokeWidth={2}/>
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        );
-                      })}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
+                <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px]">
+                  <tr>
+                    <th className="p-3 border-r">No.</th>
+                    <th className="p-3 border-r min-w-[150px]">Nama Warga</th>
+                    <th className="p-3 border-r">Blok</th>
+                    {MONTH_NAMES.map((m) => (
+                      <th key={m} className="p-2 border-r text-center">{m.substring(0, 3)}</th>
+                    ))}
+                    <th className="p-3 border-r text-center">Total</th>
+                    <th className="p-3 text-center">Status Bayar</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {processedResidents.map((r, index) => {
+                    let payCount = 0;
+                    return (
+                      <tr key={r.id} className="hover:bg-gray-50/50">
+                        <td className="p-3 border-r text-gray-400 font-bold">{index + 1}</td>
+                        <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
+                        <td className="p-3 border-r font-black text-gray-700">{r.blockNumber}</td>
+                        
+                        {Array.from({ length: 12 }, (_, i) => {
+                          const monthNum = i + 1;
+                          const isPaid = checkPaymentStatus(r.id, monthNum);
+                          if (isPaid) payCount++;
 
-                      <td className="p-3 border-r text-center font-black text-emerald-600 bg-emerald-50/30">
-                        Rp {(payCount * 10000).toLocaleString('id-ID')}
-                      </td>
-                      
-                      <td className="p-3 text-center bg-gray-50/30">
-                        <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                          payCount === 12 ? 'bg-emerald-100 text-emerald-800' :
-                          payCount > 6 ? 'bg-blue-100 text-blue-800' :
-                          payCount > 0 ? 'bg-amber-100 text-amber-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {payCount}/12
+                          return (
+                            <td 
+                              key={monthNum} 
+                              onClick={() => handleCellClick(r.id, monthNum)}
+                              className={`p-2 border-r text-center transition-all ${
+                                isAdmin ? 'cursor-pointer hover:scale-110' : ''
+                              } ${isPaid ? 'bg-emerald-50/50' : 'bg-rose-50/20'}`}
+                            >
+                              <div className="flex items-center justify-center">
+                                {isPaid ? (
+                                  <span className="bg-emerald-500 text-white rounded-full p-0.5" title="Lunas Rp 10.000">
+                                    <Check size={10} strokeWidth={4}/>
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300">
+                                    <X size={10} strokeWidth={2}/>
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          );
+                        })}
+
+                        <td className="p-3 border-r text-center font-black text-emerald-600 bg-emerald-50/30">
+                          Rp {(payCount * 10000).toLocaleString('id-ID')}
+                        </td>
+                        
+                        <td className="p-3 text-center bg-gray-50/30">
+                          <span className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                            payCount === 12 ? 'bg-emerald-100 text-emerald-800' :
+                            payCount > 6 ? 'bg-blue-100 text-blue-800' :
+                            payCount > 0 ? 'bg-amber-100 text-amber-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {payCount}/12
                         </span>
                       </td>
                     </tr>
@@ -644,6 +666,7 @@ export const Residents = () => {
             </table>
           </div>
         </div>
+      </div>
       )}
 
       {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF */}
@@ -689,7 +712,7 @@ export const Residents = () => {
                     <th className="p-3 border-r w-[50px] text-center">Detail</th>
                     <th className="p-3 border-r">Nama Lengkap</th>
                     <th className="p-3 border-r">ID Rumah</th>
-                    <th className="p-3 border-r min-w-[200px]">Anggota Serumah</th> {/* BARU: KOLOM ANGGOTA SERUMAH LANGSUNG */}
+                    <th className="p-3 border-r min-w-[200px]">Anggota Serumah</th> {/* KOLOM ANGGOTA SERUMAH LANGSUNG */}
                     <th className="p-3 border-r">Jenis Kelamin</th>
                     <th className="p-3 border-r">Peran</th>
                     <th className="p-3 border-r">Tempat, Tgl Lahir</th>
@@ -732,7 +755,7 @@ export const Residents = () => {
                           <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
                           <td className="p-3 border-r font-black text-emerald-800">{fields.id_rumah || r.blockNumber}</td>
                           
-                          {/* BARU: MENAMPILKAN DAFTAR ANGGOTA SERUMAH LANGSUNG BERUPA LENCANA KECIL */}
+                          {/* MENAMPILKAN DAFTAR ANGGOTA SERUMAH LANGSUNG BERUPA LENCANA KECIL */}
                           <td className="p-3 border-r">
                             {familyList.length > 0 ? (
                               <div className="flex flex-wrap gap-1">

@@ -42,7 +42,7 @@ const MONTHS = [
 ];
 
 export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSuccess }) => {
-  const { user } = useAuth();
+  const { user, isBendahara } = useAuth();
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   
@@ -89,6 +89,9 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
   const [paymentYear] = useState(new Date().getFullYear());
   const [selectedMonths, setSelectedMonths] = useState<number[]>([]);
 
+  // ALGORITME KEAMANAN PEMBATASAN INPUT FINANSIAL: Hanya Bendahara/Admin terautentikasi yang diizinkan mengisi kas
+  const canEditFinances = !!user && isBendahara;
+
   // Fetch all payments to populate month payments
   const { data: payments = [] } = useQuery({
     queryKey: ['allPayments'],
@@ -107,7 +110,7 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
         setEventDuesAmount(resident.eventDuesAmount || 0);
 
         // Deserialisasi extended fields dari notes
-        const { fields, rawNotes } = deserializeExtendedFields(resident.notes);
+        const { fields, rawNotes } = deserializeExtendedFields(resident.notes, !!user);
         setIdRumah(fields.id_rumah || resident.blockNumber || '');
         setJenisKelamin(fields.jenis_kelamin || 'Laki-Laki');
         setPeranKeluarga(fields.peran_keluarga || 'Kepala Keluarga');
@@ -177,7 +180,7 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
       }
       setErrors({});
     }
-  }, [resident, isOpen, payments, paymentYear]);
+  }, [resident, isOpen, payments, paymentYear, user]);
 
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
@@ -189,6 +192,7 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
   };
 
   const handleMonthToggle = (monthNum: number) => {
+    if (!canEditFinances) return;
     setSelectedMonths(prev => 
       prev.includes(monthNum) 
         ? prev.filter(m => m !== monthNum) 
@@ -258,7 +262,7 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
         jenis_kendaraan: jenisKendaraan,
         plat_nomor: platNomor,
         keterangan_warna_merk: keteranganWarnaMerk,
-        family_members_list: familyList // Daftar keluarga utuh tersimpan disini
+        family_members_list: familyList 
       }, rawNotesText);
 
       const formattedData = {
@@ -266,7 +270,8 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
         blockNumber: blockNumber.trim(),
         whatsapp: whatsapp.replace(/\D/g, '').replace(/^0+/, '62'),
         occupancyStatus: occupancyStatus,
-        eventDuesAmount: Number(eventDuesAmount) || 0,
+        // SENSOR PENYIMPANAN FINANSIAL: Hanya simpan nominal jika pengguna memiliki wewenang bendahara
+        eventDuesAmount: canEditFinances ? (Number(eventDuesAmount) || 0) : 0, 
         notes: serializedNotes
       };
 
@@ -276,8 +281,8 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
         await createResident(formattedData);
       }
 
-      // Sync bulan iuran wajib
-      if (resident?.id && user) {
+      // Sync bulan iuran wajib (Hanya jika Bendahara/Admin berwewenang)
+      if (resident?.id && canEditFinances) {
         for (let m = 1; m <= 12; m++) {
           const wasPaid = payments.some(p => p.resident_id === resident.id && p.month === m && p.year === paymentYear);
           const isSelected = selectedMonths.includes(m);
@@ -780,10 +785,10 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
 
           <hr className="border-gray-100" />
 
-          {/* BAGIAN 5: KAS BULANAN & ACARA */}
+          {/* BAGIAN 5: KAS BULANAN & ACARA (TERKUNCI UNTUK GUEST/NON-BENDAHARA) */}
           <div className="space-y-4">
             <h4 className="text-xs font-black uppercase text-gray-400 tracking-wider flex items-center gap-1.5">
-              <Clipboard size={14}/> V. Kas & Riwayat Iuran
+              <Clipboard size={14}/> V. Kas & Riwayat Iuran { !canEditFinances && '🔒 (Terkunci)' }
             </h4>
             
             {resident ? (
@@ -800,12 +805,13 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
                       <button
                         key={monthNum}
                         type="button"
+                        disabled={!canEditFinances} // KUNCI MODUL KAS WAJIB UNTUK GUEST
                         onClick={() => handleMonthToggle(monthNum)}
                         className={`py-1.5 rounded-lg text-[9px] font-bold border transition-all flex items-center justify-center gap-1 ${
                           isChecked 
                             ? 'bg-emerald-600 text-white border-emerald-700' 
                             : 'bg-white text-gray-400 border-gray-200'
-                        }`}
+                        } disabled:opacity-75 disabled:cursor-not-allowed`}
                       >
                         {m.substring(0, 3)}
                       </button>
@@ -825,7 +831,8 @@ export const ResidentModal: React.FC<Props> = ({ resident, isOpen, onClose, onSu
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-gray-400 text-sm">Rp</span>
                 <input
                   type="number"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-emerald-800 text-sm bg-white"
+                  disabled={!canEditFinances} // KUNCI MODUL KAS ACARA UNTUK GUEST
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl border focus:ring-2 focus:ring-emerald-200 outline-none font-bold text-emerald-800 text-sm bg-white disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                   value={eventDuesAmount}
                   onChange={e => setEventDuesAmount(Number(e.target.value) || 0)}
                   placeholder="0"

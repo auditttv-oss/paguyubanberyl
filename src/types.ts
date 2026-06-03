@@ -2,9 +2,9 @@
 
 export type OccupancyStatus = 'Menetap' | 'Penyewa' | 'Kunjungan' | 'Ditempati 2026';
 
-export type TabView = 'dashboard' | 'residents' | 'expenses' | 'blog' | 'structure' | 'adart' | 'settings' | 'keamanan';
+export type TabView = 'dashboard' | 'residents' | 'expenses' | 'blog' | 'structure' | 'adart' | 'settings' | 'keamanan' | 'fasum';
 
-export type UserRole = 'Ketua' | 'Bendahara' | 'Humas' | 'Security' | 'Tamu' | 'admin' | 'guest';
+export type UserRole = 'Ketua' | 'Bendahara' | 'Humas' | 'Security' | 'Warga' | 'Tamu' | 'admin' | 'guest';
 
 export interface FamilyMember {
   name: string;
