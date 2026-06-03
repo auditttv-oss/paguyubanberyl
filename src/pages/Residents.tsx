@@ -42,7 +42,6 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-// Fungsi Pembantu Konversi Nomor Telepon untuk WhatsApp
 const getWaLink = (phone: string) => {
   const clean = phone.replace(/\D/g, '');
   if (clean.startsWith('0')) {
@@ -713,7 +712,7 @@ export const Residents = () => {
         </div>
       )}
 
-      {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF */}
+      {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF (RESOLUSI BUG NESTING BARU) */}
       {activeTab === 'advanced_profile' && (
         <div className="space-y-4 animate-in fade-in duration-300">
           
@@ -756,7 +755,7 @@ export const Residents = () => {
                     <th className="p-3 border-r w-[50px] text-center">Detail</th>
                     <th className="p-3 border-r">Nama Lengkap</th>
                     <th className="p-3 border-r">ID Rumah</th>
-                    <th className="p-3 border-r min-w-[200px]">Anggota Serumah</th> {/* KOLOM ANGGOTA SERUMAH LANGSUNG */}
+                    <th className="p-3 border-r min-w-[200px]">Anggota Serumah</th>
                     <th className="p-3 border-r">Jenis Kelamin</th>
                     <th className="p-3 border-r">Peran</th>
                     <th className="p-3 border-r">Tempat, Tgl Lahir</th>
@@ -781,7 +780,7 @@ export const Residents = () => {
 
                     return (
                       <React.Fragment key={r.id}>
-                        {/* Baris Utama Kepala Keluarga */}
+                        {/* Baris Utama Kepala Keluarga (RESOLUSI BUG HTML NESTING: Bersih tanpa komentar dalam TR) */}
                         <tr className={`hover:bg-gray-50/50 transition-colors ${isExpanded ? 'bg-emerald-50/10' : ''}`}>
                           <td className="p-3 border-r text-center">
                             {familyList.length > 0 ? (
@@ -798,8 +797,6 @@ export const Residents = () => {
                           </td>
                           <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
                           <td className="p-3 border-r font-black text-emerald-800">{fields.id_rumah || r.blockNumber}</td>
-                          
-                          {/* MENAMPILKAN DAFTAR ANGGOTA SERUMAH LANGSUNG BERUPA LENCANA KECIL */}
                           <td className="p-3 border-r">
                             {familyList.length > 0 ? (
                               <div className="flex flex-wrap gap-1">
@@ -817,7 +814,6 @@ export const Residents = () => {
                               <span className="text-gray-400 italic text-[10px]">Hanya KK</span>
                             )}
                           </td>
-
                           <td className="p-3 border-r">{fields.jenis_kelamin || 'Laki-Laki'}</td>
                           <td className="p-3 border-r font-semibold text-gray-600">{fields.peran_keluarga || 'Kepala Keluarga'}</td>
                           <td className="p-3 border-r">{fields.tempat_tgl_lahir || '-'}</td>

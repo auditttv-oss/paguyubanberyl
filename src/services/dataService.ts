@@ -72,7 +72,7 @@ export const deleteEventPayment = async (id: string) => {
   }
 };
 
-// ==================== LOG KEAMANAN / TAMU REAL-TIME & FALLBACK (CRUD LENGKAP) ====================
+// ==================== LOG KEAMANAN / TAMU REAL-TIME & FALLBACK ====================
 export const fetchTamu = async (): Promise<any[]> => {
   try {
     const { data, error } = await supabase.from('tamu').select('*').order('waktu_masuk', { ascending: false });
@@ -104,12 +104,9 @@ export const createTamu = async (t: any) => {
 export const updateTamu = async (id: number, t: any) => {
   try {
     const { error } = await supabase.from('tamu').update({
-      nama_tamu: t.nama_tamu,
-      id_rumah_tujuan: t.id_rumah_tujuan,
-      titip_identitas: t.titip_identitas,
-      tujuan_kunjungan: t.tujuan_kunjungan,
-      waktu_masuk: t.waktu_masuk,
-      waktu_keluar: t.waktu_keluar
+      nama_tamu: t.nama_tamu, id_rumah_tujuan: t.id_rumah_tujuan,
+      titip_identitas: t.titip_identitas, tujuan_kunjungan: t.tujuan_kunjungan,
+      waktu_masuk: t.waktu_masuk, waktu_keluar: t.waktu_keluar
     }).eq('id_tamu', id);
     if (error) throw error;
   } catch (err) {
@@ -144,8 +141,7 @@ export const deleteTamu = async (id: number) => {
     const local = localStorage.getItem('beryl_tamu_history');
     if (local) {
       const history: any[] = JSON.parse(local);
-      const filtered = history.filter(t => t.id_tamu !== id);
-      localStorage.setItem('beryl_tamu_history', JSON.stringify(filtered));
+      localStorage.setItem('beryl_tamu_history', JSON.stringify(history.filter(t => t.id_tamu !== id)));
     }
   }
 };
@@ -240,6 +236,7 @@ export const serializeExtendedFields = (fields: ExtendedResidentFields, rawNotes
   return JSON.stringify({ _is_extended: true, fields, rawNotes });
 };
 
+// SENSOR PERTAHANAN DATA TINGKAT API: Secara dinamis menyensor nomor telepon DAN tanggal lahir bagi Mode Tamu sebelum data dikirimkan ke browser
 export const deserializeExtendedFields = (notesString: string | null, isAuthenticated: boolean = false): { fields: ExtendedResidentFields; rawNotes: string } => {
   const defaultFields: ExtendedResidentFields = {
     id_rumah: '', jenis_kelamin: 'Laki-Laki', peran_keluarga: 'Kepala Keluarga',
@@ -256,8 +253,17 @@ export const deserializeExtendedFields = (notesString: string | null, isAuthenti
       if (parsed._is_extended) {
         if (!isAuthenticated && parsed.fields) {
           if (parsed.fields.no_hp_pemilik_asli) parsed.fields.no_hp_pemilik_asli = '🔒 Terproteksi';
+          
+          // SENSOR TANGGAL LAHIR KEPALA KELUARGA UTAMA
+          if (parsed.fields.tempat_tgl_lahir) parsed.fields.tempat_tgl_lahir = '🔒 Terproteksi';
+          
+          // SENSOR TANGGAL LAHIR & NO. HP SELURUH ANGGOTA KELUARGA SERUMAH
           if (parsed.fields.family_members_list) {
-            parsed.fields.family_members_list = parsed.fields.family_members_list.map((f: any) => ({ ...f, phone: '🔒 Terproteksi' }));
+            parsed.fields.family_members_list = parsed.fields.family_members_list.map((f: any) => ({ 
+              ...f, 
+              phone: '🔒 Terproteksi',
+              birth_place: '🔒 Terproteksi' // Menyensor tgl lahir anggota keluarga lain
+            }));
           }
         }
         return { fields: { ...defaultFields, ...parsed.fields }, rawNotes: parsed.rawNotes || '' };
