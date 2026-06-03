@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchResidentsWithStatus, fetchExpenses, fetchAllPayments } from '../services/dataService';
+import { fetchResidentsWithStatus, fetchExpenses, fetchAllPayments, deserializeExtendedFields } from '../services/dataService';
 import { 
   Users,
   Home,
@@ -13,6 +13,10 @@ import {
   CreditCard
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { 
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
+  Cell, Legend, CartesianGrid 
+} from 'recharts';
 
 const getMonthName = (monthNumber: number) => {
   const date = new Date();
@@ -22,6 +26,20 @@ const getMonthName = (monthNumber: number) => {
 
 const formatCurrency = (amount: number) => {
   return `Rp ${amount.toLocaleString('id-ID')}`;
+};
+
+// Algoritme Ekstraksi Tahun Lahir (Regex)
+const parseAgeFromDob = (dobStr: string | null): number | null => {
+  if (!dobStr) return null;
+  // Ekstrak tahun 4 digit antara 1900 dan 2099
+  const match = dobStr.match(/\b(19\d\d|20\d\d)\b/);
+  if (match) {
+    const birthYear = parseInt(match[0], 10);
+    const currentYear = 2026; // Mengikuti tahun sistem berjalan (2026)
+    const age = currentYear - birthYear;
+    if (age >= 0 && age < 120) return age;
+  }
+  return null;
 };
 
 export const Dashboard = () => {
@@ -77,6 +95,63 @@ export const Dashboard = () => {
     };
   }, [payments, expenses, residents]);
 
+  // ALGORITME REKAPITULASI DEMOGRAFI USIA WARGA (Kolektif Kepala Keluarga + Anggota Serumah)
+  const ageStats = useMemo(() => {
+    let child = 0;      // 0 - 12 Tahun
+    let teen = 0;       // 13 - 18 Tahun
+    let youngAdult = 0; // 19 - 35 Tahun
+    let adult = 0;      // 36 - 55 Tahun
+    let senior = 0;     // 56 Tahun Keatas
+    let totalAgeSum = 0;
+    let totalParsedCount = 0;
+
+    residents.forEach(r => {
+      // Memakai opsi isAuthenticated=true agar kueri tidak tersensor demi akurasi grafik
+      const { fields } = deserializeExtendedFields(r.notes, true);
+      
+      // 1. Hitung Usia KK Utama
+      const ageKK = parseAgeFromDob(fields.tempat_tgl_lahir || null);
+      if (ageKK !== null) {
+        totalAgeSum += ageKK;
+        totalParsedCount++;
+        if (ageKK <= 12) child++;
+        else if (ageKK <= 18) teen++;
+        else if (ageKK <= 35) youngAdult++;
+        else if (ageKK <= 55) adult++;
+        else senior++;
+      }
+
+      // 2. Hitung Usia Anggota Keluarga Serumah
+      const familyList: any[] = (fields as any).family_members_list || [];
+      familyList.forEach(f => {
+        const ageMember = parseAgeFromDob(f.birth_place || null);
+        if (ageMember !== null) {
+          totalAgeSum += ageMember;
+          totalParsedCount++;
+          if (ageMember <= 12) child++;
+          else if (ageMember <= 18) teen++;
+          else if (ageMember <= 35) youngAdult++;
+          else if (ageMember <= 55) adult++;
+          else senior++;
+        }
+      });
+    });
+
+    const averageAge = totalParsedCount > 0 ? Math.round(totalAgeSum / totalParsedCount) : 0;
+
+    return {
+      averageAge,
+      totalParsedCount,
+      chartData: [
+        { name: 'Balita / Anak (0-12)', value: child, color: '#10b981' },
+        { name: 'Remaja (13-18)', value: teen, color: '#3b82f6' },
+        { name: 'Dewasa Muda (19-35)', value: youngAdult, color: '#8b5cf6' },
+        { name: 'Dewasa (36-55)', value: adult, color: '#f59e0b' },
+        { name: 'Lansia (56+)', value: senior, color: '#ef4444' }
+      ].filter(item => item.value > 0) // Singkirkan data kosong agar grafik presisi
+    };
+  }, [residents]);
+
   // Statistics
   const stats = useMemo(() => {
     const total = residents.length;
@@ -120,7 +195,7 @@ export const Dashboard = () => {
     };
   }, [residents]);
 
-  // FIX SINKRONISASI FORMULA: Memfilter kas masuk bulanan berdasarkan bulan sasaran p.month, bukan tanggal bayar p.paid_at
+  // Perhitungan Keuangan Periode Terpilih
   const currentMonthWajibIn = useMemo(() => {
     return payments?.filter(p => 
       p.month === selectedMonth && p.year === selectedYear
@@ -178,21 +253,6 @@ export const Dashboard = () => {
     return data;
   }, [payments, expenses, selectedYear]);
 
-  // Loading state
-  if (isLoading || expensesLoading || paymentsLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100 flex items-center justify-center p-4">
-        <div className="text-center max-w-md">
-          <div className="mx-auto w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-4 animate-spin">
-            <BarChart3 size={24} />
-          </div>
-          <h2 className="text-xl font-bold text-gray-800 mb-2">Memuat Data</h2>
-          <p className="text-gray-600">Sedang mengambil data dashboard...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
       <div className="max-w-7xl mx-auto px-4 py-6 md:py-8">
@@ -219,7 +279,7 @@ export const Dashboard = () => {
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
+                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold"
                 >
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
                     <option key={m} value={m}>{getMonthName(m)}</option>
@@ -228,7 +288,7 @@ export const Dashboard = () => {
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none"
+                  className="bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 outline-none font-bold"
                 >
                   <option value={2024}>2024</option>
                   <option value={2025}>2025</option>
@@ -353,6 +413,54 @@ export const Dashboard = () => {
               </div>
             </div>
 
+          </div>
+        </section>
+
+        {/* GRAFIK DEMOGRAFI RATA-RATA USIA WARGA BERYL */}
+        <section className="mb-6 md:mb-8 grid grid-cols-1 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+                  <UsersIcon size={20} className="text-emerald-600" />
+                  Grafik Demografi & Rata-rata Usia Warga Beryl
+                </h3>
+                <p className="text-xs text-gray-500 mt-1">
+                  Kalkulasi riil dari Kepala Keluarga serumah beserta seluruh anggota keluarga terdaftar.
+                </p>
+              </div>
+              <div className="bg-emerald-50 px-4 py-2 border border-emerald-100 rounded-xl text-center">
+                <span className="text-[10px] font-bold text-emerald-600 uppercase block tracking-wider">Rata-rata Usia</span>
+                <span className="text-lg font-black text-emerald-800">{ageStats.averageAge} Tahun</span>
+              </div>
+            </div>
+
+            {ageStats.chartData.length > 0 ? (
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ageStats.chartData} margin={{ top: 10, right: 10, left: -10, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 'bold' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                    <Tooltip 
+                      cursor={{ fill: '#f9fafb' }}
+                      contentStyle={{ borderRadius: '12px', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
+                      formatter={(value) => [`${value} Orang`, 'Jumlah']}
+                    />
+                    <Bar dataKey="value" fill="#10b981" radius={[8, 8, 0, 0]} barSize={40}>
+                      {ageStats.chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <UsersIcon size={32} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-xs">Sensus tanggal lahir warga belum mencukupi untuk memvisualisasikan grafik usia.</p>
+              </div>
+            )}
           </div>
         </section>
 

@@ -72,7 +72,7 @@ export const deleteEventPayment = async (id: string) => {
   }
 };
 
-// ==================== LOG KEAMANAN / TAMU REAL-TIME & FALLBACK ====================
+// ==================== LOG KEAMANAN / TAMU REAL-TIME & FALLBACK (CRUD LENGKAP) ====================
 export const fetchTamu = async (): Promise<any[]> => {
   try {
     const { data, error } = await supabase.from('tamu').select('*').order('waktu_masuk', { ascending: false });
@@ -101,6 +101,27 @@ export const createTamu = async (t: any) => {
   }
 };
 
+export const updateTamu = async (id: number, t: any) => {
+  try {
+    const { error } = await supabase.from('tamu').update({
+      nama_tamu: t.nama_tamu,
+      id_rumah_tujuan: t.id_rumah_tujuan,
+      titip_identitas: t.titip_identitas,
+      tujuan_kunjungan: t.tujuan_kunjungan,
+      waktu_masuk: t.waktu_masuk,
+      waktu_keluar: t.waktu_keluar
+    }).eq('id_tamu', id);
+    if (error) throw error;
+  } catch (err) {
+    const local = localStorage.getItem('beryl_tamu_history');
+    if (local) {
+      const history: any[] = JSON.parse(local);
+      const updated = history.map(item => item.id_tamu === id ? { ...item, ...t } : item);
+      localStorage.setItem('beryl_tamu_history', JSON.stringify(updated));
+    }
+  }
+};
+
 export const updateTamuKeluar = async (id: number, waktuKeluar: string) => {
   try {
     const { error } = await supabase.from('tamu').update({ waktu_keluar: waktuKeluar }).eq('id_tamu', id);
@@ -111,6 +132,20 @@ export const updateTamuKeluar = async (id: number, waktuKeluar: string) => {
       const history: any[] = JSON.parse(local);
       const updated = history.map(t => t.id_tamu === id ? { ...t, waktu_keluar: waktuKeluar } : t);
       localStorage.setItem('beryl_tamu_history', JSON.stringify(updated));
+    }
+  }
+};
+
+export const deleteTamu = async (id: number) => {
+  try {
+    const { error } = await supabase.from('tamu').delete().eq('id_tamu', id);
+    if (error) throw error;
+  } catch (err) {
+    const local = localStorage.getItem('beryl_tamu_history');
+    if (local) {
+      const history: any[] = JSON.parse(local);
+      const filtered = history.filter(t => t.id_tamu !== id);
+      localStorage.setItem('beryl_tamu_history', JSON.stringify(filtered));
     }
   }
 };

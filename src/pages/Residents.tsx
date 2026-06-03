@@ -42,6 +42,15 @@ const MONTH_NAMES = [
   'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
+// Fungsi Pembantu Konversi Nomor Telepon untuk WhatsApp
+const getWaLink = (phone: string) => {
+  const clean = phone.replace(/\D/g, '');
+  if (clean.startsWith('0')) {
+    return `https://wa.me/62${clean.substring(1)}`;
+  }
+  return `https://wa.me/${clean}`;
+};
+
 export const Residents = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -65,6 +74,10 @@ export const Residents = () => {
   
   // State untuk melacak baris keluarga yang sedang diekspansi
   const [expandedRows, setExpandedRows] = useState<{ [key: string]: boolean }>({});
+
+  // ALGORITME SORTIR KLIK GANDA (DOUBLE CLICK SORTING) LAPORAN REKAP KAS 12 BULAN
+  const [rekapSortBy, setRekapSortBy] = useState<'name' | 'block' | 'payment_count'>('block');
+  const [rekapSortOrder, setRekapSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -170,6 +183,23 @@ export const Residents = () => {
     return filtered;
   }, [residents, searchTerm, filterStatus, sortBy, sortOrder]);
 
+  // Algoritme Pengurutan Khusus untuk Laporan Rekap 12 Bulan (Diurutkan via klik ganda)
+  const sortedRekapResidents = useMemo(() => {
+    return [...processedResidents].sort((a, b) => {
+      let comparison = 0;
+      if (rekapSortBy === 'name') {
+        comparison = a.fullName.localeCompare(b.fullName);
+      } else if (rekapSortBy === 'block') {
+        comparison = a.blockNumber.localeCompare(b.blockNumber, undefined, { numeric: true });
+      } else if (rekapSortBy === 'payment_count') {
+        const countA = allPayments.filter(p => p.resident_id === a.id && p.year === selectedYear).length;
+        const countB = allPayments.filter(p => p.resident_id === b.id && p.year === selectedYear).length;
+        comparison = countA - countB;
+      }
+      return rekapSortOrder === 'asc' ? comparison : -comparison;
+    });
+  }, [processedResidents, rekapSortBy, rekapSortOrder, allPayments, selectedYear]);
+
   // Algoritme Pencarian Terintegrasi (Memindai Kepala Keluarga sekaligus seluruh Anggota Keluarga Serumah)
   const filteredAdvancedResidents = useMemo(() => {
     if (!advancedSearch.trim()) return processedResidents;
@@ -204,21 +234,17 @@ export const Residents = () => {
     }));
   };
 
-  const handleSort = (field: string) => {
-    if (sortBy === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  // Fungsi pengatur pengurutan rekap bulanan via klik ganda
+  const handleRekapDoubleClick = (field: 'name' | 'block' | 'payment_count') => {
+    if (rekapSortBy === field) {
+      setRekapSortOrder(rekapSortOrder === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortBy(field);
-      setSortOrder('asc');
+      setRekapSortBy(field);
+      setRekapSortOrder('asc');
     }
-  };
-
-  const getWaLink = (phone: string) => {
-    const clean = phone.replace(/\D/g, '');
-    if (clean.startsWith('0')) {
-      return `https://wa.me/62${clean.substring(1)}`;
-    }
-    return `https://wa.me/${clean}`;
+    toast.success(`Mengurutkan rekap bulanan berdasarkan ${
+      field === 'name' ? 'Nama Warga' : field === 'block' ? 'Blok Rumah' : 'Kepatuhan Bayar'
+    } (${rekapSortOrder === 'asc' ? 'Z-A' : 'A-Z'})`);
   };
 
   const checkPaymentStatus = (residentId: string, monthNum: number) => {
@@ -554,7 +580,7 @@ export const Residents = () => {
         </div>
       )}
 
-      {/* Tab 2: REKAP BULANAN DENGAN BAR PENCARIAN DEDIKASI */}
+      {/* Tab 2: REKAP BULANAN DENGAN BAR PENCARIAN DEDIKASI & KLIK GANDA UNTUK SORTIR */}
       {activeTab === 'rekap' && (
         <div className="space-y-4">
           
@@ -584,8 +610,8 @@ export const Residents = () => {
             <div className="p-4 bg-gray-50 border-b flex flex-col md:flex-row justify-between md:items-center gap-2">
               <div>
                 <p className="font-bold text-gray-800 text-sm">Rekapitulasi Setoran Kas Wajib (Rp 10.000/Bulan)</p>
-                <p className="text-xs text-gray-500">
-                  {isAdmin ? 'Klik pada sel iuran bulanan untuk mengubah status pembayaran.' : 'Laporan iuran warga berjalan.'}
+                <p className="text-xs text-slate-500 mt-1">
+                  💡 **Tips Sortir:** Klik ganda (Double Click) pada nama kolom **Nama Warga**, **Blok**, atau **Status Bayar** untuk mengurutkan tabel.
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -596,24 +622,42 @@ export const Residents = () => {
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse min-w-[1000px]">
-                <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px]">
+                <thead className="bg-gray-100 font-bold text-gray-600 uppercase border-b text-[10px] select-none">
                   <tr>
-                    <th className="p-3 border-r">No.</th>
-                    <th className="p-3 border-r min-w-[150px]">Nama Warga</th>
-                    <th className="p-3 border-r">Blok</th>
+                    <th className="p-3 border-r text-center w-[50px]">No.</th>
+                    <th 
+                      onDoubleClick={() => handleRekapDoubleClick('name')}
+                      className="p-3 border-r min-w-[180px] cursor-pointer hover:bg-gray-200 transition-colors"
+                      title="Klik Ganda untuk Mengurutkan Nama"
+                    >
+                      Nama Warga (Klik Ganda ↕)
+                    </th>
+                    <th 
+                      onDoubleClick={() => handleRekapDoubleClick('block')}
+                      className="p-3 border-r cursor-pointer hover:bg-gray-200 transition-colors w-[100px]"
+                      title="Klik Ganda untuk Mengurutkan Blok"
+                    >
+                      Blok (Klik Ganda ↕)
+                    </th>
                     {MONTH_NAMES.map((m) => (
                       <th key={m} className="p-2 border-r text-center">{m.substring(0, 3)}</th>
                     ))}
                     <th className="p-3 border-r text-center">Total</th>
-                    <th className="p-3 text-center">Status Bayar</th>
+                    <th 
+                      onDoubleClick={() => handleRekapDoubleClick('payment_count')}
+                      className="p-3 text-center cursor-pointer hover:bg-gray-200 transition-colors"
+                      title="Klik Ganda untuk Mengurutkan Status Kepatuhan"
+                    >
+                      Status Bayar (Klik Ganda ↕)
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {processedResidents.map((r, index) => {
+                  {sortedRekapResidents.map((r, index) => {
                     let payCount = 0;
                     return (
                       <tr key={r.id} className="hover:bg-gray-50/50">
-                        <td className="p-3 border-r text-gray-400 font-bold">{index + 1}</td>
+                        <td className="p-3 border-r text-gray-400 font-bold text-center">{index + 1}</td>
                         <td className="p-3 border-r font-bold text-gray-900">{r.fullName}</td>
                         <td className="p-3 border-r font-black text-gray-700">{r.blockNumber}</td>
                         
@@ -657,16 +701,16 @@ export const Residents = () => {
                             'bg-red-100 text-red-800'
                           }`}>
                             {payCount}/12
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* TAB 3: PROFIL KEPENDUDUKAN LENGKAP DENGAN SUB-LIST KELUARGA INTERAKTIF */}
